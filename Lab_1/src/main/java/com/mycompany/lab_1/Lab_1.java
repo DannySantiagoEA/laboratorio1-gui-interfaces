@@ -11,6 +11,6 @@ package com.mycompany.lab_1;
 public class Lab_1 {
 
     public static void main(String[] args) {
-        System.out.println("prueba 1");
+        System.out.println("branch pruebas");
     }
 }
