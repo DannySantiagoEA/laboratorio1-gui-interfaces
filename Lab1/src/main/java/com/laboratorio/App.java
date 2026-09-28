@@ -4,6 +4,7 @@
  */
 package com.laboratorio;
 
+import com.laboratorio.controller.ControladorAdquisicion;
 import com.laboratorio.view.VentanaPrincipal;
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
@@ -17,10 +18,13 @@ public class App {
         }
 
         SwingUtilities.invokeLater(() -> {
-            VentanaPrincipal ventana = new VentanaPrincipal();
-            ventana.setTitle("Laboratorio Virtual - GUI Interfaces");
-            ventana.setLocationRelativeTo(null);
-            ventana.setVisible(true);
+            VentanaPrincipal vista = new VentanaPrincipal();
+            ControladorAdquisicion controlador = new ControladorAdquisicion(vista);
+
+            vista.setLocationRelativeTo(null);
+            vista.setVisible(true);
+
+            controlador.iniciarAdquisicion();
         });
     }
 }
