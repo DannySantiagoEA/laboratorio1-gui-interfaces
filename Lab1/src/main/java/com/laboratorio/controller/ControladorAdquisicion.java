@@ -11,34 +11,26 @@ import java.awt.event.ActionListener;
 import java.util.Arrays;
 import javax.swing.Timer;
 
-/**
- * Controlador principal de adquisición y temporización. Orquesta la captura
- * periódica desacoplada de la interfaz gráfica y alimenta los canales del
- * modelo de señales.
- */
 public class ControladorAdquisicion {
 
     private final VentanaPrincipal vista;
     private final Data modelo;
     private Timer timerMuestreo;
-    private int periodoMuestreoMs = 100; // Periodo de muestreo base (100 ms)
+    private int periodoMuestreoMs = 100; // Ts inicial por defecto: 100 ms (10 Hz)
     private long contadorTicks = 0;
 
     public ControladorAdquisicion(VentanaPrincipal vista, Data modelo) {
         this.vista = vista;
         this.modelo = modelo;
 
-        // Sincroniza el modelo con la tasa de refresco del controlador
+        // Sincronización del paso temporal matemático con el modelo
         this.modelo.setPeriodoMuestreoMs(this.periodoMuestreoMs);
 
         configurarTimer();
         conectarEventosIniciales();
+        refrescarEtiquetaTs();
     }
 
-    /**
-     * Configura el temporizador Swing para emitir ticks periódicos sin bloquear
-     * la GUI.
-     */
     private void configurarTimer() {
         timerMuestreo = new Timer(periodoMuestreoMs, new ActionListener() {
             @Override
@@ -48,44 +40,81 @@ public class ControladorAdquisicion {
         });
     }
 
-    /**
-     * Tarea cíclica: avanza el tiempo en el modelo, captura los 12 canales y
-     * muestra el flujo dinámico.
-     */
     private void ejecutarCicloMuestreo() {
         contadorTicks++;
-
-        // 1. Indicar al modelo que genere las muestras del instante t y avance el tiempo
         modelo.tomarMuestra();
 
-        // 2. Obtener lecturas instantáneas de los 8 canales analógicos y 4 digitales
         double[] analogicas = modelo.getTodasLasAnalogicas();
         int[] digitales = modelo.getTodasLasDigitales();
         double tiempoActual = modelo.getTiempo();
 
-        // 3. Verificación en consola (integración del Modelo de Brayan con el Controlador de Danny)
-        System.out.printf("[Tick #%d | t = %.2f s] CH1: %.2f V | CH2: %.2f V | Dig: %s%n",
+        System.out.printf("[Tick #%d | t = %.2f s | Ts = %d ms] CH1: %.2f V | CH2: %.2f V | Dig: %s%n",
                 contadorTicks,
                 tiempoActual,
+                periodoMuestreoMs,
                 analogicas[0],
                 analogicas[1],
                 Arrays.toString(digitales));
     }
 
-    /**
-     * Reservado para conectar los botones de la vista cuando Santiago termine
-     * la GUI.
-     */
     private void conectarEventosIniciales() {
-        // En cuanto existan los botones en VentanaPrincipal:
-        // vista.getBtnIniciar().addActionListener(e -> iniciarAdquisicion());
-        // vista.getBtnDetener().addActionListener(e -> detenerAdquisicion());
+        // NOTA: Se habilitará cuando Santiago maquete los botones en VentanaPrincipal
+        /*
+        if (vista != null && vista.getBtnActualizarTs() != null) {
+            vista.getBtnActualizarTs().addActionListener(e -> procesarActualizacionTs());
+        }
+         */
+    }
+
+    public void procesarActualizacionTs() {
+        // NOTA: Se habilitará cuando exista el campo de texto en la vista
+        /*
+        try {
+            String texto = vista.getTxtTiempoMuestreo().getText().trim();
+            int nuevoTs = Integer.parseInt(texto);
+            actualizarPeriodo(nuevoTs);
+        } catch (NumberFormatException ignored) {}
+         */
+    }
+
+    /**
+     * Reconfigura el retardo en caliente sin detener el flujo ni perder
+     * muestras (Subtarea #18).
+     */
+    public void actualizarPeriodo(int nuevoPeriodoMs) {
+        if (nuevoPeriodoMs > 0) {
+            this.periodoMuestreoMs = nuevoPeriodoMs;
+
+            // 1. Modificación del retardo en tiempo real
+            if (timerMuestreo != null) {
+                timerMuestreo.setDelay(nuevoPeriodoMs);
+            }
+
+            // 2. Actualización de la variable interna de paso temporal en el modelo
+            if (modelo != null) {
+                modelo.setPeriodoMuestreoMs(nuevoPeriodoMs);
+            }
+
+            // 3. Refresco informativo
+            refrescarEtiquetaTs();
+
+            System.out.println(">> [Controlador] Frecuencia de muestreo reconfigurada a: " + nuevoPeriodoMs + " ms");
+        }
+    }
+
+    private void refrescarEtiquetaTs() {
+        // NOTA: Se habilitará cuando exista la etiqueta en la vista
+        /*
+        if (vista != null && vista.getLblTsActual() != null) {
+            vista.getLblTsActual().setText("Ts actual: " + periodoMuestreoMs + " ms");
+        }
+         */
     }
 
     public void iniciarAdquisicion() {
         if (timerMuestreo != null && !timerMuestreo.isRunning()) {
             timerMuestreo.start();
-            System.out.println(">> Adquisición en tiempo real iniciada.");
+            System.out.println(">> Adquisición iniciada.");
         }
     }
 
@@ -93,18 +122,6 @@ public class ControladorAdquisicion {
         if (timerMuestreo != null && timerMuestreo.isRunning()) {
             timerMuestreo.stop();
             System.out.println(">> Adquisición detenida.");
-        }
-    }
-
-    public void actualizarPeriodo(int nuevoPeriodoMs) {
-        if (nuevoPeriodoMs > 0) {
-            this.periodoMuestreoMs = nuevoPeriodoMs;
-            if (timerMuestreo != null) {
-                timerMuestreo.setDelay(nuevoPeriodoMs);
-            }
-            if (modelo != null) {
-                modelo.setPeriodoMuestreoMs(nuevoPeriodoMs);
-            }
         }
     }
 
