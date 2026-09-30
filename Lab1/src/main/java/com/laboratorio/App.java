@@ -7,6 +7,7 @@ package com.laboratorio;
 import com.laboratorio.controller.ControladorAdquisicion;
 import com.laboratorio.model.Data;
 import com.laboratorio.view.VentanaPrincipal;
+import java.awt.BorderLayout;
 import java.util.Scanner;
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
@@ -24,28 +25,41 @@ public class App {
             Data modelo = new Data();
             ControladorAdquisicion controlador = new ControladorAdquisicion(vista, modelo);
 
+            // Montar la gráfica de JFreeChart en la ventana
+            vista.setLayout(new BorderLayout());
+            vista.add(controlador.getPanelGrafico(), BorderLayout.CENTER);
+            vista.setSize(800, 500);
             vista.setLocationRelativeTo(null);
             vista.setVisible(true);
 
-            // Iniciar a 100 ms por defecto
             controlador.iniciarAdquisicion();
 
-            // Hilo secundario para inyectar valores de prueba desde la consola
-            Thread listenerConsola = new Thread(() -> {
+            // Consola para conmutar canales del 1 al 8 en caliente
+            Thread listenerCanales = new Thread(() -> {
                 Scanner scanner = new Scanner(System.in);
-                System.out.println("\n>>> PRUEBA SUBTAREA #18: Escribe un nuevo Ts (ej: 50, 500, 1000) y pulsa ENTER:");
+                System.out.println("\n============================================================");
+                System.out.println("  PRUEBA SUBTAREA #14 - CONMUTACIÓN DE CANALES (CH1 a CH8)");
+                System.out.println("  Escribe un canal del 1 al 8 y pulsa ENTER para cambiar:");
+                System.out.println("============================================================\n");
+
                 while (true) {
                     if (scanner.hasNextLine()) {
+                        String entrada = scanner.nextLine().trim();
                         try {
-                            int nuevoTs = Integer.parseInt(scanner.nextLine().trim());
-                            SwingUtilities.invokeLater(() -> controlador.actualizarPeriodo(nuevoTs));
+                            int canal = Integer.parseInt(entrada);
+                            if (canal >= 1 && canal <= 8) {
+                                // Conmuta el canal en el Event Dispatch Thread
+                                SwingUtilities.invokeLater(() -> controlador.cambiarCanalSeleccionado(canal - 1));
+                            } else {
+                                System.err.println(">> Ingrese un canal entre 1 y 8.");
+                            }
                         } catch (NumberFormatException ignored) {
                         }
                     }
                 }
             });
-            listenerConsola.setDaemon(true);
-            listenerConsola.start();
+            listenerCanales.setDaemon(true);
+            listenerCanales.start();
         });
     }
 }
