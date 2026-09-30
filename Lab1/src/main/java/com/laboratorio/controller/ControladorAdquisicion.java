@@ -4,31 +4,40 @@
  */
 package com.laboratorio.controller;
 
+import com.laboratorio.model.Data;
 import com.laboratorio.view.VentanaPrincipal;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.util.Arrays;
 import javax.swing.Timer;
 
 /**
  * Controlador principal de adquisición y temporización. Orquesta la captura
- * periódica desacoplada de la interfaz gráfica (HU-01 / Tarea #10).
+ * periódica desacoplada de la interfaz gráfica y alimenta los canales del
+ * modelo de señales.
  */
 public class ControladorAdquisicion {
 
     private final VentanaPrincipal vista;
+    private final Data modelo;
     private Timer timerMuestreo;
-    private int periodoMuestreoMs = 100; // Periodo base por defecto (100 ms)
+    private int periodoMuestreoMs = 100; // Periodo de muestreo base (100 ms)
     private long contadorTicks = 0;
 
-    public ControladorAdquisicion(VentanaPrincipal vista) {
+    public ControladorAdquisicion(VentanaPrincipal vista, Data modelo) {
         this.vista = vista;
+        this.modelo = modelo;
+
+        // Sincroniza el modelo con la tasa de refresco del controlador
+        this.modelo.setPeriodoMuestreoMs(this.periodoMuestreoMs);
+
         configurarTimer();
         conectarEventosIniciales();
     }
 
     /**
-     * Configura el motor de temporización Swing para emitir ticks periódicos
-     * sin bloquear el hilo de despacho de eventos (EDT).
+     * Configura el temporizador Swing para emitir ticks periódicos sin bloquear
+     * la GUI.
      */
     private void configurarTimer() {
         timerMuestreo = new Timer(periodoMuestreoMs, new ActionListener() {
@@ -40,28 +49,43 @@ public class ControladorAdquisicion {
     }
 
     /**
-     * Tarea que se dispara en cada intervalo del temporizador.
+     * Tarea cíclica: avanza el tiempo en el modelo, captura los 12 canales y
+     * muestra el flujo dinámico.
      */
     private void ejecutarCicloMuestreo() {
         contadorTicks++;
-        // Verificación en consola del ciclo desacoplado (prueba unitaria de la tarea #10)
-        System.out.println("[Timer Tick #" + contadorTicks + "] Muestreo ejecutado a " + periodoMuestreoMs + " ms");
 
-        // Aquí Danny conectará más adelante la llamada al generador de Brayan (HU-02 / #14)
-        // y el refresco continuo de JFreeChart.
+        // 1. Indicar al modelo que genere las muestras del instante t y avance el tiempo
+        modelo.tomarMuestra();
+
+        // 2. Obtener lecturas instantáneas de los 8 canales analógicos y 4 digitales
+        double[] analogicas = modelo.getTodasLasAnalogicas();
+        int[] digitales = modelo.getTodasLasDigitales();
+        double tiempoActual = modelo.getTiempo();
+
+        // 3. Verificación en consola (integración del Modelo de Brayan con el Controlador de Danny)
+        System.out.printf("[Tick #%d | t = %.2f s] CH1: %.2f V | CH2: %.2f V | Dig: %s%n",
+                contadorTicks,
+                tiempoActual,
+                analogicas[0],
+                analogicas[1],
+                Arrays.toString(digitales));
     }
 
     /**
-     * Enlaza el ciclo de vida del timer con los botones de control de la GUI.
+     * Reservado para conectar los botones de la vista cuando Santiago termine
+     * la GUI.
      */
     private void conectarEventosIniciales() {
-        // Métodos de control accesibles desde los botones o directamente desde el código
+        // En cuanto existan los botones en VentanaPrincipal:
+        // vista.getBtnIniciar().addActionListener(e -> iniciarAdquisicion());
+        // vista.getBtnDetener().addActionListener(e -> detenerAdquisicion());
     }
 
     public void iniciarAdquisicion() {
         if (timerMuestreo != null && !timerMuestreo.isRunning()) {
             timerMuestreo.start();
-            System.out.println(">> Adquisición iniciada.");
+            System.out.println(">> Adquisición en tiempo real iniciada.");
         }
     }
 
@@ -73,9 +97,14 @@ public class ControladorAdquisicion {
     }
 
     public void actualizarPeriodo(int nuevoPeriodoMs) {
-        this.periodoMuestreoMs = nuevoPeriodoMs;
-        if (timerMuestreo != null) {
-            timerMuestreo.setDelay(nuevoPeriodoMs);
+        if (nuevoPeriodoMs > 0) {
+            this.periodoMuestreoMs = nuevoPeriodoMs;
+            if (timerMuestreo != null) {
+                timerMuestreo.setDelay(nuevoPeriodoMs);
+            }
+            if (modelo != null) {
+                modelo.setPeriodoMuestreoMs(nuevoPeriodoMs);
+            }
         }
     }
 

@@ -5,6 +5,7 @@
 package com.laboratorio;
 
 import com.laboratorio.controller.ControladorAdquisicion;
+import com.laboratorio.model.Data;
 import com.laboratorio.view.VentanaPrincipal;
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
@@ -19,7 +20,8 @@ public class App {
 
         SwingUtilities.invokeLater(() -> {
             VentanaPrincipal vista = new VentanaPrincipal();
-            ControladorAdquisicion controlador = new ControladorAdquisicion(vista);
+            Data modelo = new Data(); // Instancia del modelo de señales
+            ControladorAdquisicion controlador = new ControladorAdquisicion(vista, modelo);
 
             vista.setLocationRelativeTo(null);
             vista.setVisible(true);
