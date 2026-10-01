@@ -26,65 +26,71 @@ public class App {
             Data modelo = new Data();
             ControladorAdquisicion controlador = new ControladorAdquisicion(vista, modelo);
 
+            // Montaje del lienzo de JFreeChart directamente en la ventana (JFrame)
             vista.setLayout(new BorderLayout());
             vista.add(controlador.getPanelGrafico(), BorderLayout.CENTER);
-            vista.setSize(800, 500);
+            vista.setSize(850, 520);
             vista.setLocationRelativeTo(null);
             vista.setVisible(true);
 
             controlador.iniciarAdquisicion();
 
-            // Consola para conmutar canales o extraer el buffer de pares (ti, Vi)
-            Thread listenerConsola = new Thread(() -> {
+            // Hilo de consola interactivo para pruebas de las tareas integradas
+            Thread hiloConsola = new Thread(() -> {
                 Scanner scanner = new Scanner(System.in);
                 System.out.println("\n============================================================");
-                System.out.println("  CONSOLA - PRUEBA SUBTAREA #21 (EXTRACCIÓN DE BUFFER)");
-                System.out.println("  • Escribe 'buffer' para extraer los pares (ti, Vi) actuales.");
-                System.out.println("  • Escribe un número (1 al 8) para cambiar de canal.");
+                System.out.println("       BANCO DE PRUEBAS DE INTEGRACIÓN (APP CONSOLE)         ");
+                System.out.println("============================================================");
+                System.out.println(" COMANDOS DISPONIBLES:");
+                System.out.println("  • 'ch 1' al 'ch 8' : Conmuta el canal analógico (#14)");
+                System.out.println("  • 'buffer'         : Extrae los pares (ti, Vi) acumulados (#21)");
+                System.out.println("  • Cualquier texto  : Prueba sanitización y validación de Ts (#17 y #18)");
+                System.out.println("                       Ej: '5', '50 ms', '1 000', 'abc', '50,5'");
                 System.out.println("============================================================\n");
 
                 while (true) {
                     if (scanner.hasNextLine()) {
                         String entrada = scanner.nextLine().trim();
+                        if (entrada.isEmpty()) {
+                            continue;
+                        }
 
                         if (entrada.equalsIgnoreCase("buffer")) {
-                            // Extrae la lista de muestras temporales sincronizadas
                             List<double[]> muestras = controlador.obtenerBufferCanalActivo();
-                            System.out.println("\n>>> [SUBTAREA #21] EXTRACCIÓN DEL BUFFER DEL CANAL "
-                                    + (controlador.getCanalSeleccionado() + 1) + " (" + controlador.getNombreCanalActivo() + ")");
-                            System.out.println(">>> Total de muestras en memoria: " + muestras.size());
+                            int canal = controlador.getCanalSeleccionado() + 1;
+                            String nombre = controlador.getNombreCanalActivo();
+
+                            System.out.println("\n------------------------------------------------------------");
+                            System.out.println(">>> [BÚFER TEMPORAL] CANAL CH" + canal + " (" + nombre + ")");
+                            System.out.println(">>> Muestras en memoria: " + muestras.size());
                             System.out.println("------------------------------------------------------------");
                             System.out.println("Fila\tTiempo ti (s)\tVoltaje Vi (V)");
                             System.out.println("------------------------------------------------------------");
 
-                            // Imprimir los primeros 10 puntos recuperados como evidencia
                             int limite = Math.min(muestras.size(), 10);
                             for (int i = 0; i < limite; i++) {
                                 double[] punto = muestras.get(i);
                                 System.out.printf("[%d]\tti = %.3f s\tVi = %.3f V%n", i + 1, punto[0], punto[1]);
                             }
-
                             if (muestras.size() > 10) {
-                                System.out.println("... (" + (muestras.size() - 10) + " muestras adicionales en memoria)");
+                                System.out.println("... (" + (muestras.size() - 10) + " muestras adicionales)");
                             }
                             System.out.println("------------------------------------------------------------\n");
 
+                        } else if (entrada.toLowerCase().startsWith("ch ") || entrada.matches("^[1-8]$")) {
+                            String numStr = entrada.toLowerCase().replace("ch", "").trim();
+                            int canalIndex = Integer.parseInt(numStr) - 1;
+                            SwingUtilities.invokeLater(() -> controlador.cambiarCanalSeleccionado(canalIndex));
+
                         } else {
-                            try {
-                                int canal = Integer.parseInt(entrada);
-                                if (canal >= 1 && canal <= 8) {
-                                    SwingUtilities.invokeLater(() -> controlador.cambiarCanalSeleccionado(canal - 1));
-                                } else {
-                                    System.err.println(">> Canal inválido. Ingrese un número entre 1 y 8.");
-                                }
-                            } catch (NumberFormatException ignored) {
-                            }
+                            SwingUtilities.invokeLater(() -> controlador.actualizarPeriodo(entrada));
                         }
                     }
                 }
             });
-            listenerConsola.setDaemon(true);
-            listenerConsola.start();
+
+            hiloConsola.setDaemon(true);
+            hiloConsola.start();
         });
     }
 }
