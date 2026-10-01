@@ -10,7 +10,10 @@ import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 import javax.swing.JPanel;
 import javax.swing.Timer;
 import org.jfree.chart.ChartFactory;
@@ -31,11 +34,15 @@ public class ControladorAdquisicion {
 
     // --- Componentes Gráficos JFreeChart (Subtarea #14) ---
     private static final int MAX_MUESTRAS_VISIBLES = 100; // Ventana deslizante (Ring Buffer)
-    private int canalSeleccionado = 0; // Canal activo por defecto (CH1 = índice 0)
+    private int canalSeleccionado = 0;
     private XYSeries serieCanalActivo;
     private XYSeriesCollection datasetGrafica;
     private JFreeChart graficoLineas;
     private ChartPanel panelGrafico;
+
+    // --- Búfer de Extracción de Muestras Temporales (Subtarea #21 / HU-04) ---
+    // Almacena pares ordenados [ti, Vi] sincronizados con el Ts activo
+    private final List<double[]> bufferMuestrasCanalActivo = Collections.synchronizedList(new ArrayList<>());
 
     public ControladorAdquisicion(VentanaPrincipal vista, Data modelo) {
         this.vista = vista;
@@ -48,35 +55,28 @@ public class ControladorAdquisicion {
         conectarEventosIniciales();
     }
 
-    /**
-     * Inicializa el lienzo, la serie temporal y la ventana deslizante (Subtarea
-     * #14).
-     */
     private void inicializarGraficaJFreeChart() {
-        // 1. Serie de datos con límite estricto de muestras para proteger la RAM
         this.serieCanalActivo = new XYSeries("CH1");
         this.serieCanalActivo.setMaximumItemCount(MAX_MUESTRAS_VISIBLES);
 
         this.datasetGrafica = new XYSeriesCollection(this.serieCanalActivo);
 
-        // 2. Creación del gráfico de líneas en tiempo real
         this.graficoLineas = ChartFactory.createXYLineChart(
-                "Canal 1 - " + TipoOndaSeguro(0), // Título inicial
-                "Tiempo (s)", // Eje X
-                "Voltaje (V)", // Eje Y
+                "Canal 1 - " + tipoOndaSeguro(0),
+                "Tiempo (s)",
+                "Voltaje (V)",
                 this.datasetGrafica,
                 PlotOrientation.VERTICAL,
-                true, // Leyenda
-                false, // Tooltips
-                false // URLs
+                true,
+                false,
+                false
         );
 
-        // 3. Estilización y fijación de escala vertical analógica (0.0 V a 5.0 V)
         XYPlot plot = this.graficoLineas.getXYPlot();
         plot.setBackgroundPaint(new Color(245, 245, 245));
         plot.setDomainGridlinePaint(Color.LIGHT_GRAY);
         plot.setRangeGridlinePaint(Color.LIGHT_GRAY);
-        plot.getRangeAxis().setRange(0.0, 5.0); // Rango de la guía
+        plot.getRangeAxis().setRange(0.0, 5.0);
 
         this.panelGrafico = new ChartPanel(this.graficoLineas);
         this.panelGrafico.setMouseWheelEnabled(true);
@@ -92,8 +92,8 @@ public class ControladorAdquisicion {
     }
 
     /**
-     * Ciclo periódico: muestrea el modelo y alimenta la serie gráfica (Subtarea
-     * #14).
+     * Ciclo periódico: muestrea, grafica y acumula la serie temporal (Subtarea
+     * #21).
      */
     private void ejecutarCicloMuestreo() {
         contadorTicks++;
@@ -104,10 +104,12 @@ public class ControladorAdquisicion {
         double tiempoActual = modelo.getTiempo();
         double valorMuestraActiva = analogicas[canalSeleccionado];
 
-        // Actualización dinámica de la gráfica en tiempo real
+        // 1. Alimentación de la ventana gráfica deslizante
         serieCanalActivo.add(tiempoActual, valorMuestraActiva);
 
-        // Salida formateada de verificación
+        // 2. Registro en el búfer de muestras temporales [ti, Vi] para exportación
+        bufferMuestrasCanalActivo.add(new double[]{tiempoActual, valorMuestraActiva});
+
         System.out.printf("[Tick #%d | t = %.2f s | Ts = %d ms] CH%d: %.2f V | Dig: %s%n",
                 contadorTicks,
                 tiempoActual,
@@ -118,8 +120,7 @@ public class ControladorAdquisicion {
     }
 
     /**
-     * Conmuta la fuente analógica hacia el arreglo
-     * analogicas[canalSeleccionado].
+     * Conmuta la fuente analógica y reinicia el búfer para el nuevo canal.
      */
     public void cambiarCanalSeleccionado(int nuevoCanal) {
         if (nuevoCanal < 0 || nuevoCanal >= Data.NUM_ANALOGICAS) {
@@ -128,19 +129,65 @@ public class ControladorAdquisicion {
 
         this.canalSeleccionado = nuevoCanal;
 
-        // Limpiar el trazo para evitar traslapar líneas entre señales distintas
+        // Limpiar el trazo gráfico
         this.serieCanalActivo.clear();
         this.serieCanalActivo.setKey("CH" + (nuevoCanal + 1));
 
-        String nombreCanal = "Canal " + (nuevoCanal + 1) + " - " + TipoOndaSeguro(nuevoCanal);
+        // Limpiar el historial en memoria para asociar muestras exclusivamente al nuevo canal
+        limpiarBufferMuestras();
+
+        String nombreCanal = "Canal " + (nuevoCanal + 1) + " - " + tipoOndaSeguro(nuevoCanal);
         this.graficoLineas.setTitle(nombreCanal);
 
-        System.out.println(">> [Controlador] Conmutado a Canal Analógico CH" + (nuevoCanal + 1));
+        System.out.println(">> [Controlador] Canal conmutado a CH" + (nuevoCanal + 1) + ". Búfer temporal reiniciado.");
+    }
+
+    // =========================================================================
+    // MÉTODOS DE EXTRACCIÓN Y SINCRONIZACIÓN DE BÚFER (SUBTAREA #21 / HU-04)
+    // =========================================================================
+    /**
+     * Recupera una copia ordenada de los pares (ti, Vi) acumulados para el
+     * canal activo. Retorna una lista defensiva para que Brayan la escriba en
+     * disco sin interferir con el Timer.
+     *
+     * @return Lista de arreglos double[2] donde [0] = Tiempo (s) y [1] =
+     * Voltaje (V)
+     */
+    public synchronized List<double[]> obtenerBufferCanalActivo() {
+        synchronized (bufferMuestrasCanalActivo) {
+            return new ArrayList<>(bufferMuestrasCanalActivo);
+        }
     }
 
     /**
-     * Incrusta el ChartPanel en el contenedor Swing provisto por la Vista.
+     * Retorna el número de muestras acumuladas en el búfer de exportación
+     * actual.
      */
+    public int getCantidadMuestrasBuffer() {
+        return bufferMuestrasCanalActivo.size();
+    }
+
+    /**
+     * Vacía el búfer temporal de muestras del canal activo.
+     */
+    public void limpiarBufferMuestras() {
+        bufferMuestrasCanalActivo.clear();
+    }
+
+    /**
+     * Retorna el canal analógico actualmente bajo monitoreo (0 a 7).
+     */
+    public int getCanalSeleccionado() {
+        return canalSeleccionado;
+    }
+
+    /**
+     * Retorna el nombre descriptivo del canal activo para cabeceras de archivo.
+     */
+    public String getNombreCanalActivo() {
+        return tipoOndaSeguro(canalSeleccionado);
+    }
+
     public void incrustarGrafica(JPanel contenedor) {
         if (contenedor != null) {
             contenedor.setLayout(new BorderLayout());
@@ -155,11 +202,7 @@ public class ControladorAdquisicion {
         return panelGrafico;
     }
 
-    public int getCanalSeleccionado() {
-        return canalSeleccionado;
-    }
-
-    private String TipoOndaSeguro(int canal) {
+    private String tipoOndaSeguro(int canal) {
         try {
             return modelo.getNombresAnalogicas()[canal];
         } catch (Exception e) {
@@ -168,7 +211,6 @@ public class ControladorAdquisicion {
     }
 
     private void conectarEventosIniciales() {
-        // Conexión pasiva preparada para cuando Santiago complete VentanaPrincipal
     }
 
     public void actualizarPeriodo(int nuevoPeriodoMs) {
