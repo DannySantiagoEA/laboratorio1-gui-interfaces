@@ -21,6 +21,11 @@ import org.jfree.chart.renderer.xy.XYLineAndShapeRenderer;
 import org.jfree.chart.renderer.xy.XYStepRenderer;
 import org.jfree.data.xy.XYSeries;
 import org.jfree.data.xy.XYSeriesCollection;
+import java.util.ArrayList;
+import java.util.List;
+import org.jfree.data.Range;
+
+        
 
 /**
  * Tarea #13: integración y configuración de la librería de graficación
@@ -37,6 +42,10 @@ public class GraficaTiempo extends JPanel {
 
     private final XYSeries serie;       // datos (x = tiempo, y = valor)
     private final JFreeChart grafico;   // gráfico completo
+    // Tarea #22: en qué instante empezó a mostrarse cada señal (para el archivo)
+    private final List<Double> tiemposCambio = new ArrayList<>();
+    private final List<String> titulosCambio = new ArrayList<>();
+    private String tituloPendiente = null;   // se registra con el siguiente punto
 
     /**
      * @param ejeY texto del eje vertical, ej. "Voltaje (V)"
@@ -99,7 +108,15 @@ public class GraficaTiempo extends JPanel {
     /**
      * Agrega un punto nuevo (se llama en cada ciclo de muestreo).
      */
+        /**
+     * Agrega un punto nuevo (se llama en cada ciclo de muestreo).
+     */
     public void agregarPunto(double tiempo, double valor) {
+        if (tituloPendiente != null) {          // primer punto de una señal nueva
+            tiemposCambio.add(tiempo);
+            titulosCambio.add(tituloPendiente);
+            tituloPendiente = null;
+        }
         serie.add(tiempo, valor);
     }
 
@@ -110,8 +127,17 @@ public class GraficaTiempo extends JPanel {
     public void mostrarSenal(Senal senal) {
         grafico.setTitle(senal.getNombre());
         serie.clear();
+        tiemposCambio.clear();
+        titulosCambio.clear();
         int n = senal.getCantidad();
         int inicio = Math.max(0, n - MAX_PUNTOS);
+        if (n > 0) {                             // ya hay historial: la señal empieza ahí
+            tiemposCambio.add(senal.getTiempo(inicio));
+            titulosCambio.add(senal.getNombre());
+            tituloPendiente = null;
+        } else {                                 // sin datos: empieza con el siguiente punto
+            tituloPendiente = senal.getNombre();
+        }
         for (int i = inicio; i < n; i++) {
             serie.add(senal.getTiempo(i), senal.getValor(i), false); // false = no redibujar aún
         }
@@ -119,9 +145,71 @@ public class GraficaTiempo extends JPanel {
     }
 
     /**
+     * Cambia solo el título, SIN borrar los puntos. Se usa al cambiar de
+     * señal para que la gráfica siga desde donde iba.
+     */
+    public void cambiarTitulo(String titulo) {
+        grafico.setTitle(titulo);
+        tituloPendiente = titulo;               // la señal nueva empieza en el siguiente punto
+    }
+
+    /**
+     * Tarea #22: devuelve los puntos {tiempo, valor} que se ven AHORA en la
+     * pantalla (los que están dentro del rango visible del eje de tiempo).
+     */
+    public List<double[]> getPuntosVisibles() {
+        Range visible = grafico.getXYPlot().getDomainAxis().getRange();
+        List<double[]> puntos = new ArrayList<>();
+        for (int i = 0; i < serie.getItemCount(); i++) {
+            double t = serie.getX(i).doubleValue();
+            if (visible.contains(t)) {
+                puntos.add(new double[]{t, serie.getY(i).doubleValue()});
+            }
+        }
+        return puntos;
+    }
+
+    /**
+     * Tarea #22: describe qué señal(es) se ven en pantalla. Si dentro de la
+     * ventana visible hubo un cambio de señal, indica desde qué instante.
+     * Ej: "Analógica 1 - Seno (desde t = 3.700 s) -> Analógica 4 - Triangular (desde t = 8.700 s)"
+     */
+    public String getDescripcionVisible() {
+        if (tiemposCambio.isEmpty()) {
+            return grafico.getTitle() != null ? grafico.getTitle().getText() : "";
+        }
+        Range visible = grafico.getXYPlot().getDomainAxis().getRange();
+
+        // Señal que ya estaba activa al inicio de la ventana visible
+        int primera = 0;
+        for (int i = 0; i < tiemposCambio.size(); i++) {
+            if (tiemposCambio.get(i) <= visible.getLowerBound()) {
+                primera = i;
+            }
+        }
+        if (primera == tiemposCambio.size() - 1) {
+            return titulosCambio.get(primera);   // no hubo cambios en lo visible
+        }
+        StringBuilder texto = new StringBuilder();
+        for (int i = primera; i < tiemposCambio.size(); i++) {
+            double desde = (i == primera)
+                    ? Math.max(visible.getLowerBound(), serie.getMinX())
+                    : tiemposCambio.get(i);
+            if (texto.length() > 0) {
+                texto.append(" -> ");
+            }
+            texto.append(String.format(java.util.Locale.US, "%s (desde t = %.3f s)",
+                    titulosCambio.get(i), desde));
+        }
+        return texto.toString();
+    }
+
+    /**
      * Borra todos los puntos de la gráfica.
      */
     public void limpiar() {
         serie.clear();
+        tiemposCambio.clear();
+        titulosCambio.clear();
     }
 }

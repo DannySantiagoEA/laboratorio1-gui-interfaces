@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Scanner;
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
+import java.io.File;
 
 public class App {
 
@@ -44,7 +45,9 @@ public class App {
                 System.out.println(" COMANDOS DISPONIBLES:");
                 System.out.println("  • 'ch 1' al 'ch 8' : Conmuta el canal analógico (#14)");
                 System.out.println("  • 'buffer'         : Extrae los pares (ti, Vi) acumulados (#21)");
-                System.out.println("  • Cualquier texto  : Prueba sanitización y validación de Ts (#17 y #18)");
+                 System.out.println("  • 'guardar [ruta]' : Escribe el canal activo en disco (#22)");
+                System.out.println("                       Ej: 'guardar', 'guardar D:/datos/seno.txt'");
+                System.out.println("  • Cualquier texto  : Prueba sanitizacion y validacion de Ts (#17 y #18)");
                 System.out.println("                       Ej: '5', '50 ms', '1 000', 'abc', '50,5'");
                 System.out.println("============================================================\n");
 
@@ -76,7 +79,15 @@ public class App {
                                 System.out.println("... (" + (muestras.size() - 10) + " muestras adicionales)");
                             }
                             System.out.println("------------------------------------------------------------\n");
-
+                            
+                        } else if (entrada.toLowerCase().startsWith("guardar")) {
+                           String ruta = entrada.substring("guardar".length()).trim();
+                           if (ruta.isEmpty()) {
+                               ruta = "senal_CH" + (controlador.getCanalSeleccionado() + 1) + ".txt";
+                           }
+                           File archivo = new File(ruta);
+                           SwingUtilities.invokeLater(() -> controlador.guardarCanalActivo(archivo));
+                           
                         } else if (entrada.toLowerCase().startsWith("ch ") || entrada.matches("^[1-8]$")) {
                             String numStr = entrada.toLowerCase().replace("ch", "").trim();
                             int canalIndex = Integer.parseInt(numStr) - 1;
