@@ -18,6 +18,9 @@ import java.util.List;
 import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.Timer;
+import com.laboratorio.model.EscritorArchivo;
+import java.io.File;
+import java.io.IOException;
 
 /**
  * Controlador principal de adquisición, temporización y visualización. Orquesta
@@ -71,11 +74,11 @@ public class ControladorAdquisicion {
      */
     private void ejecutarCicloMuestreo() {
         contadorTicks++;
+        double tiempoActual = modelo.getTiempo();   // instante de ESTA muestra (antes de que avance)
         modelo.tomarMuestra();
 
         double[] analogicas = modelo.getTodasLasAnalogicas();
         int[] digitales = modelo.getTodasLasDigitales();
-        double tiempoActual = modelo.getTiempo();
         double valorMuestraActiva = analogicas[canalSeleccionado];
 
         // 1. Delegación a la gráfica de Brayan (Tarea #13 y #14)
@@ -104,7 +107,7 @@ public class ControladorAdquisicion {
         this.canalSeleccionado = nuevoCanal;
 
         // Carga la serie histórica del nuevo canal mediante el método de Brayan
-        this.graficaAnalogica.mostrarSenal(this.modelo.getHistorialAnalogica(nuevoCanal));
+         this.graficaAnalogica.cambiarTitulo(getNombreCanalActivo());
 
         // Limpia el búfer temporal para asociar las nuevas muestras exclusivamente a este canal
         limpiarBufferMuestras();
@@ -173,6 +176,52 @@ public class ControladorAdquisicion {
 
     public void limpiarBufferMuestras() {
         bufferMuestrasCanalActivo.clear();
+    }
+    
+        // =========================================================================
+    // ESCRITURA EN DISCO: FORMATO VALOR VS. TIEMPO (Tarea #22)
+    // =========================================================================
+    /**
+     * Guarda en un archivo de texto las muestras (ti, Vi) del canal activo.
+     *
+     * @return true si se guardó, false si hubo un problema
+     */
+        /**
+     * Guarda en un archivo de texto la señal que se ve en la pantalla
+     * visualizadora (los mismos puntos que dibuja la gráfica).
+     *
+     * @return true si se guardó, false si hubo un problema
+     */
+    public boolean guardarCanalActivo(File archivo) {
+        // Se toman los puntos directamente de la gráfica: lo que se guarda es lo que se ve
+        List<double[]> muestras = graficaAnalogica.getPuntosVisibles();
+
+        if (muestras.isEmpty()) {
+            notificarError("Guardar señal", "La gráfica aún no tiene puntos para guardar.");
+            return false;
+        }
+
+        try {
+            int escritas = EscritorArchivo.guardarValorVsTiempo(
+                    muestras, archivo, graficaAnalogica.getDescripcionVisible(), "V");
+            System.out.println(">> [Controlador] " + escritas + " muestras guardadas en: "
+                    + archivo.getAbsolutePath());
+            return true;
+        } catch (IOException ex) {
+            notificarError("Error al guardar", "No se pudo escribir el archivo:\n" + ex.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Muestra un error en una ventana si la GUI está visible, o en consola si no.
+     */
+    private void notificarError(String titulo, String mensaje) {
+        if (vista != null && vista.isShowing()) {
+            JOptionPane.showMessageDialog(vista, mensaje, titulo, JOptionPane.WARNING_MESSAGE);
+        } else {
+            System.err.println(">> [" + titulo + "]: " + mensaje);
+        }
     }
 
     public int getCanalSeleccionado() {
