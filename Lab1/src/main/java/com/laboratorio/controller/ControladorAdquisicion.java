@@ -5,24 +5,26 @@
 package com.laboratorio.controller;
 
 import com.laboratorio.model.Data;
+import com.laboratorio.model.EscritorArchivo;
 import com.laboratorio.view.GraficaTiempo;
 import com.laboratorio.view.VentanaPrincipal;
-import java.awt.BorderLayout;
 import java.awt.Color;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.io.File;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import javax.swing.JFileChooser;
 import javax.swing.JOptionPane;
-import javax.swing.JPanel;
 import javax.swing.Timer;
+import javax.swing.filechooser.FileNameExtensionFilter;
 
 /**
- * Controlador principal de adquisición, temporización y visualización. Orquesta
- * el flujo periódico de datos, delega el trazado en GraficaTiempo (Tarea #13) y
- * gestiona buffers y validaciones numéricas (HU-01 a HU-04).
+ * Controlador principal de la arquitectura MVC (HU-01, HU-02, HU-03, HU-04).
+ * Orquesta la temporización periódica desacoplada, la actualización de las
+ * series gráficas en tiempo real, la sanitización del periodo Ts y la
+ * persistencia a disco.
  */
 public class ControladorAdquisicion {
 
@@ -32,11 +34,15 @@ public class ControladorAdquisicion {
     private int periodoMuestreoMs = 100; // Ts inicial estándar: 100 ms (10 Hz)
     private long contadorTicks = 0;
 
-    // --- Componente Gráfico Reutilizable de Brayan (Tarea #13 / HU-02) ---
-    private int canalSeleccionado = 0;
-    private final GraficaTiempo graficaAnalogica;
+    // Componentes gráficos JFreeChart encapsulados en GraficaTiempo (Tarea #13 de Brayan)
+    private GraficaTiempo graficaAnalogica;
+    private GraficaTiempo graficaDigital;
 
-    // --- Búfer de Extracción de Muestras Temporales (Subtarea #21 / HU-04) ---
+    // Estado de selección de canales activos en la GUI
+    private int canalAnalogicoActivo = 0;
+    private int canalDigitalActivo = 0;
+
+    // Búfer sincronizado en memoria para exportación física a disco (HU-04 / Tarea #21)
     private final List<double[]> bufferMuestrasCanalActivo = Collections.synchronizedList(new ArrayList<>());
 
     public ControladorAdquisicion(VentanaPrincipal vista, Data modelo) {
@@ -45,17 +51,40 @@ public class ControladorAdquisicion {
 
         this.modelo.setPeriodoMuestreoMs(this.periodoMuestreoMs);
 
-        // Instanciación del visor analógico (0.0 V a 5.0 V, línea continua roja)
-        this.graficaAnalogica = new GraficaTiempo("Voltaje (V)", Data.V_MIN, Data.V_MAX, false, Color.RED);
-
-        // Carga inicial del nombre e historial del canal 0
-        this.graficaAnalogica.mostrarSenal(this.modelo.getHistorialAnalogica(canalSeleccionado));
-
+        inicializarGraficas();
+        inicializarVista();
         configurarTimer();
-        conectarEventosIniciales();
-        refrescarEtiquetaTs();
+        conectarEventos();
     }
 
+    /**
+     * Construye las instancias de GraficaTiempo para los módulos analógico y
+     * digital.
+     */
+    private void inicializarGraficas() {
+        // Señal analógica: trazo continuo, rango 0.0 V a 5.0 V, color rojo
+        this.graficaAnalogica = new GraficaTiempo("Voltaje (V)", 0.0, 5.0, false, new Color(200, 30, 30));
+
+        // Señal digital: escalón discreto, rango -0.2 a 1.2, color azul
+        this.graficaDigital = new GraficaTiempo("Nivel Lógico", -0.2, 1.2, true, new Color(30, 110, 200));
+    }
+
+    /**
+     * Monta los lienzos en la interfaz de Santiago y sincroniza los combos y
+     * etiquetas iniciales.
+     */
+    private void inicializarVista() {
+        vista.montarGraficaAnalogica(this.graficaAnalogica);
+        vista.montarGraficaDigital(this.graficaDigital);
+
+        vista.cargarNombresCanales(modelo.getNombresAnalogicas(), modelo.getNombresDigitales());
+        vista.setTiempoMuestreoActual(this.periodoMuestreoMs);
+    }
+
+    /**
+     * Inicializa el temporizador Swing para ejecutar muestreos periódicos en el
+     * EDT.
+     */
     private void configurarTimer() {
         timerMuestreo = new Timer(periodoMuestreoMs, new ActionListener() {
             @Override
@@ -66,8 +95,8 @@ public class ControladorAdquisicion {
     }
 
     /**
-     * Tarea periódica: muestrea el modelo, delega a GraficaTiempo y acumula el
-     * búfer.
+     * Tarea periódica: avanza el modelo, actualiza los lienzos de JFreeChart y
+     * alimenta el búfer.
      */
     private void ejecutarCicloMuestreo() {
         contadorTicks++;
@@ -76,136 +105,157 @@ public class ControladorAdquisicion {
         double[] analogicas = modelo.getTodasLasAnalogicas();
         int[] digitales = modelo.getTodasLasDigitales();
         double tiempoActual = modelo.getTiempo();
-        double valorMuestraActiva = analogicas[canalSeleccionado];
 
-        // 1. Delegación a la gráfica de Brayan (Tarea #13 y #14)
-        graficaAnalogica.agregarPunto(tiempoActual, valorMuestraActiva);
+        double vAnalogico = analogicas[canalAnalogicoActivo];
+        int vDigital = digitales[canalDigitalActivo];
 
-        // 2. Registro de pares (ti, Vi) en el búfer de extracción (Tarea #21)
-        bufferMuestrasCanalActivo.add(new double[]{tiempoActual, valorMuestraActiva});
+        // 1. Renderizado dinámico en pantalla
+        graficaAnalogica.agregarPunto(tiempoActual, vAnalogico);
+        graficaDigital.agregarPunto(tiempoActual, vDigital);
 
-        System.out.printf("[Tick #%d | t = %.2f s | Ts = %d ms] CH%d: %.2f V | Dig: %s%n",
-                contadorTicks,
-                tiempoActual,
-                periodoMuestreoMs,
-                (canalSeleccionado + 1),
-                valorMuestraActiva,
-                Arrays.toString(digitales));
+        // 2. Acumulación ordenada de pares (ti, Vi) en el búfer temporal
+        bufferMuestrasCanalActivo.add(new double[]{tiempoActual, vAnalogico});
     }
 
     /**
-     * Conmuta la señal analógica bajo monitoreo cargando su historial y título.
+     * Conecta la API pública de eventos de VentanaPrincipal con los
+     * controladores de acción.
      */
-    public void cambiarCanalSeleccionado(int nuevoCanal) {
-        if (nuevoCanal < 0 || nuevoCanal >= Data.NUM_ANALOGICAS) {
-            return;
-        }
+    private void conectarEventos() {
+        // Conmutación de canal analógico (HU-02 / Subtareas #12 y #15)
+        vista.addListenerCanalAnalogico(e -> {
+            int nuevoCanal = vista.getCanalAnalogico();
+            if (nuevoCanal >= 0 && nuevoCanal != canalAnalogicoActivo) {
+                this.canalAnalogicoActivo = nuevoCanal;
+                this.graficaAnalogica.limpiar();
+                limpiarBufferMuestras();
+                System.out.println(">> Canal analógico conmutado a: " + modelo.getNombresAnalogicas()[nuevoCanal]);
+            }
+        });
 
-        this.canalSeleccionado = nuevoCanal;
+        // Conmutación de canal digital
+        vista.addListenerCanalDigital(e -> {
+            int nuevoCanal = vista.getCanalDigital();
+            if (nuevoCanal >= 0 && nuevoCanal != canalDigitalActivo) {
+                this.canalDigitalActivo = nuevoCanal;
+                this.graficaDigital.limpiar();
+                System.out.println(">> Canal digital conmutado a: " + modelo.getNombresDigitales()[nuevoCanal]);
+            }
+        });
 
-        // Carga la serie histórica del nuevo canal mediante el método de Brayan
-        this.graficaAnalogica.mostrarSenal(this.modelo.getHistorialAnalogica(nuevoCanal));
+        // Actualización de Ts en caliente (HU-03 / Subtareas #16 y #18)
+        vista.addListenerCambiarMuestreo(e -> {
+            String textoEntrada = vista.getTiempoMuestreoTexto();
+            actualizarPeriodo(textoEntrada);
+        });
 
-        // Limpia el búfer temporal para asociar las nuevas muestras exclusivamente a este canal
-        limpiarBufferMuestras();
-
-        System.out.println(">> [Controlador] Canal conmutado a CH" + (nuevoCanal + 1) + ". Búfer temporal reiniciado.");
+        // Exportación de datos analógicos a disco (HU-04 / Subtareas #20 y #22)
+        vista.addListenerGuardarAnalogica(e -> {
+            exportarDatosCanalActivo();
+        });
     }
 
-    // =========================================================================
-    // PARAMETRIZACIÓN Y VALIDACIÓN DEL TIEMPO DE MUESTREO (HU-03 / #17 y #18)
-    // =========================================================================
+    /**
+     * Sanitiza y valida la entrada con ValidadorMuestreo aplicando el nuevo
+     * retardo en caliente.
+     *
+     * @param entradaTexto Cadena cruda introducida por el usuario en la GUI.
+     * @return true si el valor fue aceptado y aplicado; false si ocurrió una
+     * excepción.
+     */
     public boolean actualizarPeriodo(String entradaTexto) {
         try {
             int nuevoTs = ValidadorMuestreo.validarPeriodo(entradaTexto);
-            actualizarPeriodo(nuevoTs);
-            return true;
-        } catch (PeriodoInvalidoException ex) {
-            if (vista != null && vista.isShowing()) {
-                JOptionPane.showMessageDialog(
-                        vista,
-                        ex.getMessage(),
-                        "Tiempo de Muestreo Inválido",
-                        JOptionPane.WARNING_MESSAGE
-                );
-            } else {
-                System.err.println(">> [Validación Rechazada]: " + ex.getMessage());
+            this.periodoMuestreoMs = nuevoTs;
+
+            if (timerMuestreo != null) {
+                timerMuestreo.setDelay(nuevoTs);
             }
+            if (modelo != null) {
+                modelo.setPeriodoMuestreoMs(nuevoTs);
+            }
+
+            vista.setTiempoMuestreoActual(nuevoTs);
+            System.out.println(">> [Controlador] Periodo de muestreo reconfigurado a: " + nuevoTs + " ms");
+            return true;
+
+        } catch (PeriodoInvalidoException ex) {
+            JOptionPane.showMessageDialog(
+                    vista,
+                    ex.getMessage(),
+                    "Tiempo de Muestreo Inválido",
+                    JOptionPane.WARNING_MESSAGE
+            );
             return false;
         }
     }
 
-    public void actualizarPeriodo(int nuevoPeriodoMs) {
-        if (nuevoPeriodoMs < ValidadorMuestreo.MIN_MS || nuevoPeriodoMs > ValidadorMuestreo.MAX_MS) {
-            System.err.println(">> [Controlador] Valor " + nuevoPeriodoMs + " ms fuera del rango permitido.");
+    /**
+     * Abre un JFileChooser y persiste el búfer en disco mediante la clase de
+     * Brayan (EscritorArchivo).
+     */
+    private void exportarDatosCanalActivo() {
+        if (bufferMuestrasCanalActivo.isEmpty()) {
+            JOptionPane.showMessageDialog(
+                    vista,
+                    "No hay muestras acumuladas en memoria para exportar.",
+                    "Búfer Vacío",
+                    JOptionPane.INFORMATION_MESSAGE
+            );
             return;
         }
 
-        this.periodoMuestreoMs = nuevoPeriodoMs;
+        JFileChooser selectorArchivos = new JFileChooser();
+        selectorArchivos.setDialogTitle("Exportar Señal Analógica a Archivo");
+        selectorArchivos.setFileFilter(new FileNameExtensionFilter("Archivos de texto (*.txt)", "txt"));
 
-        if (timerMuestreo != null) {
-            timerMuestreo.setDelay(nuevoPeriodoMs);
-        }
-        if (modelo != null) {
-            modelo.setPeriodoMuestreoMs(nuevoPeriodoMs);
-        }
+        int seleccion = selectorArchivos.showSaveDialog(vista);
+        if (seleccion == JFileChooser.APPROVE_OPTION) {
+            File archivo = selectorArchivos.getSelectedFile();
+            if (!archivo.getName().toLowerCase().endsWith(".txt")) {
+                archivo = new File(archivo.getAbsolutePath() + ".txt");
+            }
 
-        refrescarEtiquetaTs();
-        System.out.println(">> [Controlador] Frecuencia de muestreo reconfigurada a: " + nuevoPeriodoMs + " ms");
+            try {
+                // Invocación a la rutina oficial codificada por Brayan (Tarea #22)
+                int totalEscritas = EscritorArchivo.guardarValorVsTiempo(
+                        obtenerBufferCanalActivo(),
+                        archivo,
+                        modelo.getNombresAnalogicas()[canalAnalogicoActivo],
+                        "V"
+                );
+
+                JOptionPane.showMessageDialog(
+                        vista,
+                        "Archivo guardado correctamente con " + totalEscritas + " muestras:\n"
+                        + archivo.getAbsolutePath(),
+                        "Exportación Exitosa",
+                        JOptionPane.INFORMATION_MESSAGE
+                );
+
+            } catch (Exception ex) {
+                JOptionPane.showMessageDialog(
+                        vista,
+                        "Error al escribir el archivo: " + ex.getMessage(),
+                        "Error I/O",
+                        JOptionPane.ERROR_MESSAGE
+                );
+            }
+        }
     }
 
-    public void refrescarEtiquetaTs() {
-        // Reservado para cuando Santiago exponga el componente en VentanaPrincipal
-    }
-
-    // =========================================================================
-    // EXTRACCIÓN Y SINCRONIZACIÓN DE BÚFER (HU-04 / Subtarea #21)
-    // =========================================================================
+    /**
+     * Retorna una copia defensiva del búfer temporal de muestras del canal
+     * activo.
+     */
     public synchronized List<double[]> obtenerBufferCanalActivo() {
         synchronized (bufferMuestrasCanalActivo) {
             return new ArrayList<>(bufferMuestrasCanalActivo);
         }
     }
 
-    public int getCantidadMuestrasBuffer() {
-        return bufferMuestrasCanalActivo.size();
-    }
-
     public void limpiarBufferMuestras() {
         bufferMuestrasCanalActivo.clear();
-    }
-
-    public int getCanalSeleccionado() {
-        return canalSeleccionado;
-    }
-
-    public String getNombreCanalActivo() {
-        try {
-            return modelo.getNombresAnalogicas()[canalSeleccionado];
-        } catch (Exception e) {
-            return "Señal Analógica";
-        }
-    }
-
-    /**
-     * Incrusta el visor de Brayan en el contenedor Swing provisto por la Vista.
-     */
-    public void incrustarGrafica(JPanel contenedor) {
-        if (contenedor != null) {
-            contenedor.setLayout(new BorderLayout());
-            contenedor.removeAll();
-            contenedor.add(graficaAnalogica, BorderLayout.CENTER);
-            contenedor.revalidate();
-            contenedor.repaint();
-        }
-    }
-
-    public GraficaTiempo getPanelGrafico() {
-        return graficaAnalogica;
-    }
-
-    private void conectarEventosIniciales() {
-        // Reservado para conectar botones de Santiago
     }
 
     public void iniciarAdquisicion() {
@@ -224,5 +274,13 @@ public class ControladorAdquisicion {
 
     public boolean isEjecutando() {
         return timerMuestreo != null && timerMuestreo.isRunning();
+    }
+
+    public int getPeriodoMuestreoMs() {
+        return periodoMuestreoMs;
+    }
+
+    public int getCanalAnalogicoActivo() {
+        return canalAnalogicoActivo;
     }
 }
