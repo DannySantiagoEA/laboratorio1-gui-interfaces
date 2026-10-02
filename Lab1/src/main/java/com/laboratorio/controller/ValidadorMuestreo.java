@@ -7,9 +7,9 @@ package com.laboratorio.controller;
 /**
  * Tarea #17: sanitización y validación numérica del tiempo de muestreo.
  *
- * 1. Sanitiza: quita espacios, la unidad "ms" y cambia coma por punto.
- * 2. Convierte a número dentro de un try-catch (NumberFormatException).
- * 3. Valida que sea entero y que esté dentro del rango permitido.
+ * 1. Sanitiza: quita espacios, la unidad "ms" y cambia coma por punto. 2.
+ * Convierte a número dentro de un try-catch (NumberFormatException). 3. Valida
+ * que sea entero y que esté dentro del rango permitido.
  */
 public class ValidadorMuestreo {
 
@@ -29,8 +29,8 @@ public class ValidadorMuestreo {
         }
         String limpio = entrada.trim()
                 .toLowerCase()
-                .replace("ms", "")    // acepta "100 ms"
-                .replace(" ", "")     // acepta "1 000"
+                .replace("ms", "") // acepta "100 ms"
+                .replace(" ", "") // acepta "1 000"
                 .replace(",", ".");   // acepta "100,5" para poder avisar que no es entero
 
         if (limpio.isEmpty()) {

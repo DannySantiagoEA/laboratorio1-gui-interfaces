@@ -1,3 +1,7 @@
+/*
+ * Click nbfs://nbhost/SystemFileSystem/Templates/Licenses/license-default.txt to change this license
+ * Click nbfs://nbhost/SystemFileSystem/Templates/Classes/Class.java to edit this template
+ */
 package com.laboratorio.view;
 
 import com.laboratorio.model.Senal;
@@ -22,9 +26,9 @@ import org.jfree.data.xy.XYSeriesCollection;
  * Tarea #13: integración y configuración de la librería de graficación
  * (JFreeChart) para el trazado de series temporales continuas.
  *
- * Es un JPanel reutilizable: se usa una vez para la señal analógica
- * (línea continua) y otra para la señal digital (escalones). Muestra una
- * ventana deslizante con los últimos segundos de la señal, como un osciloscopio.
+ * Es un JPanel reutilizable: se usa una vez para la señal analógica (línea
+ * continua) y otra para la señal digital (escalones). Muestra una ventana
+ * deslizante con los últimos segundos de la señal, como un osciloscopio.
  */
 public class GraficaTiempo extends JPanel {
 
@@ -35,11 +39,11 @@ public class GraficaTiempo extends JPanel {
     private final JFreeChart grafico;   // gráfico completo
 
     /**
-     * @param ejeY    texto del eje vertical, ej. "Voltaje (V)"
-     * @param yMin    valor mínimo del eje vertical
-     * @param yMax    valor máximo del eje vertical
+     * @param ejeY texto del eje vertical, ej. "Voltaje (V)"
+     * @param yMin valor mínimo del eje vertical
+     * @param yMax valor máximo del eje vertical
      * @param digital true = dibuja en escalones (0/1), false = línea continua
-     * @param color   color de la línea
+     * @param color color de la línea
      */
     public GraficaTiempo(String ejeY, double yMin, double yMax, boolean digital, Color color) {
 
@@ -50,13 +54,13 @@ public class GraficaTiempo extends JPanel {
 
         // 2. Crear el gráfico XY con la fábrica de JFreeChart
         grafico = ChartFactory.createXYLineChart(
-                "",                         // título (se pone al escoger la señal)
-                "Tiempo (s)",               // eje X
-                ejeY,                       // eje Y
-                datos,                      // datos
+                "", // título (se pone al escoger la señal)
+                "Tiempo (s)", // eje X
+                ejeY, // eje Y
+                datos, // datos
                 PlotOrientation.VERTICAL,
-                false,                      // leyenda
-                true,                       // tooltips (valor al pasar el mouse)
+                false, // leyenda
+                true, // tooltips (valor al pasar el mouse)
                 false);                     // URLs
 
         // 3. Configurar el área de dibujo
@@ -100,7 +104,8 @@ public class GraficaTiempo extends JPanel {
     }
 
     /**
-     * Cambia la señal que se muestra: borra la serie y carga su historial reciente.
+     * Cambia la señal que se muestra: borra la serie y carga su historial
+     * reciente.
      */
     public void mostrarSenal(Senal senal) {
         grafico.setTitle(senal.getNombre());

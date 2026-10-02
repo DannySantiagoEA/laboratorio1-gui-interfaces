@@ -5,8 +5,8 @@
 package com.laboratorio.controller;
 
 /**
- * Tarea #17: excepción propia que indica que el tiempo de muestreo escrito
- * por el usuario no es válido. El mensaje explica el motivo.
+ * Tarea #17: excepción propia que indica que el tiempo de muestreo escrito por
+ * el usuario no es válido. El mensaje explica el motivo.
  */
 public class PeriodoInvalidoException extends Exception {
 
