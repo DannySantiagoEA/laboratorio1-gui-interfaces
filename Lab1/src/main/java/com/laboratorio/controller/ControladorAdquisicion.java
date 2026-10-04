@@ -21,10 +21,10 @@ import javax.swing.Timer;
 import javax.swing.filechooser.FileNameExtensionFilter;
 
 /**
- * Controlador principal de la arquitectura MVC (HU-01, HU-02, HU-03, HU-04).
- * Orquesta la temporización periódica desacoplada, la actualización de las
- * series gráficas en tiempo real, la sanitización del periodo Ts y la
- * persistencia a disco.
+ * Controlador principal de la arquitectura MVC. Orquesta la temporización
+ * periódica desacoplada, la actualización de las series gráficas analógicas y
+ * digitales en tiempo real, la sanitización del periodo Ts y la persistencia a
+ * disco.
  */
 public class ControladorAdquisicion {
 
@@ -34,7 +34,7 @@ public class ControladorAdquisicion {
     private int periodoMuestreoMs = 100; // Ts inicial estándar: 100 ms (10 Hz)
     private long contadorTicks = 0;
 
-    // Componentes gráficos JFreeChart encapsulados en GraficaTiempo (Tarea #13 de Brayan)
+    // Componentes gráficos JFreeChart encapsulados en GraficaTiempo
     private GraficaTiempo graficaAnalogica;
     private GraficaTiempo graficaDigital;
 
@@ -42,7 +42,7 @@ public class ControladorAdquisicion {
     private int canalAnalogicoActivo = 0;
     private int canalDigitalActivo = 0;
 
-    // Búfer sincronizado en memoria para exportación física a disco (HU-04 / Tarea #21)
+    // Búfer sincronizado en memoria para exportación física a disco (HU-04 / #21)
     private final List<double[]> bufferMuestrasCanalActivo = Collections.synchronizedList(new ArrayList<>());
 
     public ControladorAdquisicion(VentanaPrincipal vista, Data modelo) {
@@ -58,8 +58,7 @@ public class ControladorAdquisicion {
     }
 
     /**
-     * Construye las instancias de GraficaTiempo para los módulos analógico y
-     * digital.
+     * Construye las instancias de GraficaTiempo para analógica y digital.
      */
     private void inicializarGraficas() {
         // Señal analógica: trazo continuo, rango 0.0 V a 5.0 V, color rojo
@@ -82,7 +81,7 @@ public class ControladorAdquisicion {
     }
 
     /**
-     * Inicializa el temporizador Swing para ejecutar muestreos periódicos en el
+     * Inicializa el temporizador Swing para emitir muestreos periódicos en el
      * EDT.
      */
     private void configurarTimer() {
@@ -96,7 +95,8 @@ public class ControladorAdquisicion {
 
     /**
      * Tarea periódica: avanza el modelo, actualiza los lienzos de JFreeChart y
-     * alimenta el búfer.
+     * alimenta el búfer. Cumple con la actualización del canal digital en cada
+     * ciclo (#27).
      */
     private void ejecutarCicloMuestreo() {
         contadorTicks++;
@@ -107,7 +107,7 @@ public class ControladorAdquisicion {
         double tiempoActual = modelo.getTiempo();
 
         double vAnalogico = analogicas[canalAnalogicoActivo];
-        int vDigital = digitales[canalDigitalActivo];
+        int vDigital = digitales[canalDigitalActivo]; // Lectura indexada del canal digital
 
         // 1. Renderizado dinámico en pantalla
         graficaAnalogica.agregarPunto(tiempoActual, vAnalogico);
@@ -122,10 +122,10 @@ public class ControladorAdquisicion {
      * controladores de acción.
      */
     private void conectarEventos() {
-        // Conmutación de canal analógico (HU-02 / Subtareas #12 y #15)
+        // Conmutación de canal analógico (HU-02)
         vista.addListenerCanalAnalogico(e -> {
             int nuevoCanal = vista.getCanalAnalogico();
-            if (nuevoCanal >= 0 && nuevoCanal != canalAnalogicoActivo) {
+            if (nuevoCanal >= 0 && nuevoCanal < Data.NUM_ANALOGICAS && nuevoCanal != canalAnalogicoActivo) {
                 this.canalAnalogicoActivo = nuevoCanal;
                 this.graficaAnalogica.limpiar();
                 limpiarBufferMuestras();
@@ -133,23 +133,23 @@ public class ControladorAdquisicion {
             }
         });
 
-        // Conmutación de canal digital
+        // Conmutación de canal digital (HU-05 / Subtarea #27)
         vista.addListenerCanalDigital(e -> {
             int nuevoCanal = vista.getCanalDigital();
-            if (nuevoCanal >= 0 && nuevoCanal != canalDigitalActivo) {
+            if (nuevoCanal >= 0 && nuevoCanal < Data.NUM_DIGITALES && nuevoCanal != canalDigitalActivo) {
                 this.canalDigitalActivo = nuevoCanal;
                 this.graficaDigital.limpiar();
-                System.out.println(">> Canal digital conmutado a: " + modelo.getNombresDigitales()[nuevoCanal]);
+                System.out.println(">> [Controlador] Canal digital activo: " + modelo.getNombresDigitales()[nuevoCanal]);
             }
         });
 
-        // Actualización de Ts en caliente (HU-03 / Subtareas #16 y #18)
+        // Actualización de Ts en caliente (HU-03)
         vista.addListenerCambiarMuestreo(e -> {
             String textoEntrada = vista.getTiempoMuestreoTexto();
             actualizarPeriodo(textoEntrada);
         });
 
-        // Exportación de datos analógicos a disco (HU-04 / Subtareas #20 y #22)
+        // Exportación de datos analógicos a disco (HU-04)
         vista.addListenerGuardarAnalogica(e -> {
             exportarDatosCanalActivo();
         });
@@ -158,10 +158,6 @@ public class ControladorAdquisicion {
     /**
      * Sanitiza y valida la entrada con ValidadorMuestreo aplicando el nuevo
      * retardo en caliente.
-     *
-     * @param entradaTexto Cadena cruda introducida por el usuario en la GUI.
-     * @return true si el valor fue aceptado y aplicado; false si ocurrió una
-     * excepción.
      */
     public boolean actualizarPeriodo(String entradaTexto) {
         try {
@@ -191,8 +187,8 @@ public class ControladorAdquisicion {
     }
 
     /**
-     * Abre un JFileChooser y persiste el búfer en disco mediante la clase de
-     * Brayan (EscritorArchivo).
+     * Abre un JFileChooser y persiste el búfer en disco mediante
+     * EscritorArchivo.
      */
     private void exportarDatosCanalActivo() {
         if (bufferMuestrasCanalActivo.isEmpty()) {
@@ -217,7 +213,6 @@ public class ControladorAdquisicion {
             }
 
             try {
-                // Invocación a la rutina oficial codificada por Brayan (Tarea #22)
                 int totalEscritas = EscritorArchivo.guardarValorVsTiempo(
                         obtenerBufferCanalActivo(),
                         archivo,
@@ -244,10 +239,6 @@ public class ControladorAdquisicion {
         }
     }
 
-    /**
-     * Retorna una copia defensiva del búfer temporal de muestras del canal
-     * activo.
-     */
     public synchronized List<double[]> obtenerBufferCanalActivo() {
         synchronized (bufferMuestrasCanalActivo) {
             return new ArrayList<>(bufferMuestrasCanalActivo);
@@ -282,5 +273,9 @@ public class ControladorAdquisicion {
 
     public int getCanalAnalogicoActivo() {
         return canalAnalogicoActivo;
+    }
+
+    public int getCanalDigitalActivo() {
+        return canalDigitalActivo;
     }
 }

@@ -17,13 +17,8 @@ import java.util.List;
 import java.util.Locale;
 
 /**
- * Tarea #22: rutina de escritura en disco (BufferedWriter/FileWriter) con el
- * formato Valor vs. Tiempo.
- *
- * Ejemplo del archivo que se genera:
- *
- * # Señal: Analógica 1 - Seno # Formato: Valor vs. Tiempo # Muestras: 3
- * Tiempo(s) Valor(V) 0.100 2.5000 0.200 3.9695 0.300 4.8776
+ * Tarea #22: Rutina de escritura en disco (BufferedWriter/FileWriter) con el
+ * formato Valor vs. Tiempo bajo try-with-resources.
  */
 public class EscritorArchivo {
 
@@ -40,7 +35,6 @@ public class EscritorArchivo {
     public static int guardarValorVsTiempo(List<double[]> muestras, File archivo,
             String nombreSenal, String unidad) throws IOException {
 
-        // try-with-resources: cierra el archivo automáticamente, aunque ocurra un error
         try (BufferedWriter escritor = new BufferedWriter(
                 new FileWriter(archivo, StandardCharsets.UTF_8))) {
 
@@ -54,7 +48,7 @@ public class EscritorArchivo {
             escritor.write("Tiempo(s)\tValor(" + unidad + ")");
             escritor.newLine();
 
-            // 2. Una línea por muestra. Locale.US -> punto decimal (2.5000 y no 2,5000)
+            // 2. Una línea por muestra con punto decimal estadounidense
             for (double[] punto : muestras) {
                 escritor.write(String.format(Locale.US, "%.3f\t%.4f", punto[0], punto[1]));
                 escritor.newLine();
