@@ -11,8 +11,9 @@ import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
 
 /**
- * Punto de entrada de la aplicación. Inicializa la arquitectura MVC dentro del
- * Event Dispatch Thread (EDT).
+ * Punto de entrada principal de la aplicación. Configura el aspecto visual
+ * nativo del sistema operativo e inicializa el flujo MVC dentro del Event
+ * Dispatch Thread (EDT)[cite: 1, 14].
  */
 public class App {
 
@@ -27,10 +28,11 @@ public class App {
             Data modelo = new Data();
             ControladorAdquisicion controlador = new ControladorAdquisicion(vista, modelo);
 
-            vista.setTitle("Laboratorio 1 - Adquisición de Señales (Interfaces)");
-            vista.setLocationRelativeTo(null);
+            vista.setTitle("Laboratorio 1 - Adquisición de Señales e Instrumentación (Interfaces)");
+            vista.setLocationRelativeTo(null); // Centrar en la pantalla
             vista.setVisible(true);
 
+            // Iniciar flujo de adquisición periódica
             controlador.iniciarAdquisicion();
         });
     }

@@ -7,6 +7,7 @@ package com.laboratorio.controller;
 import com.laboratorio.model.Data;
 import com.laboratorio.model.EscritorArchivo;
 import com.laboratorio.view.GraficaTiempo;
+import com.laboratorio.view.IndicadorLed;
 import com.laboratorio.view.VentanaPrincipal;
 import java.awt.Color;
 import java.awt.event.ActionEvent;
@@ -21,10 +22,11 @@ import javax.swing.Timer;
 import javax.swing.filechooser.FileNameExtensionFilter;
 
 /**
- * Controlador principal de la arquitectura MVC (HU-01 a HU-07). Orquesta la
- * temporización periódica desacoplada, la actualización de las series gráficas
- * analógicas y digitales en tiempo real, la sanitización del periodo Ts y la
- * persistencia a disco de ambos dominios de señal.
+ * Controlador principal de la arquitectura MVC (Sprint 1 y Sprint 2). Orquesta
+ * la temporización periódica desacoplada, la actualización de series continuas
+ * y discretas en tiempo real, la sanitización del periodo Ts, la persistencia
+ * en disco y la conmutación de salidas digitales con retroalimentación LED
+ * (HU-07)[cite: 1, 14].
  */
 public class ControladorAdquisicion {
 
@@ -42,11 +44,13 @@ public class ControladorAdquisicion {
     private int canalAnalogicoActivo = 0;
     private int canalDigitalActivo = 0;
 
-    // Búfer en memoria para canal analógico activo (HU-04 / #21)
+    // Búferes sincronizados en memoria para exportación (HU-04 / #21 y HU-06 / #30)[cite: 1, 14]
     private final List<double[]> bufferAnalogicoActivo = Collections.synchronizedList(new ArrayList<>());
-
-    // Búfer en memoria para canal digital activo (HU-06 / #30)
     private final List<double[]> bufferDigitalActivo = Collections.synchronizedList(new ArrayList<>());
+
+    // Módulo de actuadores virtuales y salidas digitales (HU-07 / #34 y #35)[cite: 1]
+    public static final int NUM_SALIDAS = 4;
+    private final boolean[] estadosSalidas = new boolean[NUM_SALIDAS];
 
     public ControladorAdquisicion(VentanaPrincipal vista, Data modelo) {
         this.vista = vista;
@@ -60,9 +64,6 @@ public class ControladorAdquisicion {
         conectarEventos();
     }
 
-    /**
-     * Construye las instancias de GraficaTiempo para analógica y digital.
-     */
     private void inicializarGraficas() {
         // Señal analógica: trazo continuo, rango 0.0 V a 5.0 V, color rojo
         this.graficaAnalogica = new GraficaTiempo("Voltaje (V)", 0.0, 5.0, false, new Color(200, 30, 30));
@@ -71,22 +72,22 @@ public class ControladorAdquisicion {
         this.graficaDigital = new GraficaTiempo("Nivel Lógico", -0.2, 1.2, true, new Color(30, 110, 200));
     }
 
-    /**
-     * Monta los lienzos en la interfaz y sincroniza los combos y etiquetas
-     * iniciales.
-     */
     private void inicializarVista() {
         vista.montarGraficaAnalogica(this.graficaAnalogica);
         vista.montarGraficaDigital(this.graficaDigital);
 
         vista.cargarNombresCanales(modelo.getNombresAnalogicas(), modelo.getNombresDigitales());
         vista.setTiempoMuestreoActual(this.periodoMuestreoMs);
+
+        // Inicializar estado de los indicadores LED de la vista
+        for (int i = 0; i < NUM_SALIDAS; i++) {
+            IndicadorLed led = vista.getLedSalida(i);
+            if (led != null) {
+                led.setEstado(estadosSalidas[i]);
+            }
+        }
     }
 
-    /**
-     * Inicializa el temporizador Swing para emitir muestreos periódicos en el
-     * EDT.
-     */
     private void configurarTimer() {
         timerMuestreo = new Timer(periodoMuestreoMs, new ActionListener() {
             @Override
@@ -96,10 +97,6 @@ public class ControladorAdquisicion {
         });
     }
 
-    /**
-     * Tarea periódica: avanza el modelo, actualiza los lienzos de JFreeChart y
-     * alimenta ambos búferes cronológicos en memoria.
-     */
     private void ejecutarCicloMuestreo() {
         contadorTicks++;
         modelo.tomarMuestra();
@@ -111,21 +108,17 @@ public class ControladorAdquisicion {
         double vAnalogico = analogicas[canalAnalogicoActivo];
         int vDigital = digitales[canalDigitalActivo];
 
-        // 1. Renderizado dinámico en pantalla
+        // 1. Trazado continuo en pantalla
         graficaAnalogica.agregarPunto(tiempoActual, vAnalogico);
         graficaDigital.agregarPunto(tiempoActual, vDigital);
 
-        // 2. Acumulación ordenada en memoria de pares (ti, Vi) y (ti, Si)
+        // 2. Registro de pares (ti, Vi) y (ti, Si) en los búferes cronológicos
         bufferAnalogicoActivo.add(new double[]{tiempoActual, vAnalogico});
         bufferDigitalActivo.add(new double[]{tiempoActual, (double) vDigital});
     }
 
-    /**
-     * Conecta la API pública de eventos de VentanaPrincipal con los
-     * controladores de acción.
-     */
     private void conectarEventos() {
-        // Conmutación de canal analógico (HU-02)
+        // Conmutación de canal analógico (HU-02)[cite: 1]
         vista.addListenerCanalAnalogico(e -> {
             int nuevoCanal = vista.getCanalAnalogico();
             if (nuevoCanal >= 0 && nuevoCanal < Data.NUM_ANALOGICAS && nuevoCanal != canalAnalogicoActivo) {
@@ -136,38 +129,70 @@ public class ControladorAdquisicion {
             }
         });
 
-        // Conmutación de canal digital (HU-05 / Subtarea #27)
+        // Conmutación de canal digital (HU-05 / Subtarea #27)[cite: 1]
         vista.addListenerCanalDigital(e -> {
             int nuevoCanal = vista.getCanalDigital();
             if (nuevoCanal >= 0 && nuevoCanal < Data.NUM_DIGITALES && nuevoCanal != canalDigitalActivo) {
                 this.canalDigitalActivo = nuevoCanal;
                 this.graficaDigital.limpiar();
-                limpiarBufferDigital(); // Reinicio atómico del búfer al conmutar canal (#30)
+                limpiarBufferDigital();
                 System.out.println(">> [Controlador] Canal digital activo: " + modelo.getNombresDigitales()[nuevoCanal]);
             }
         });
 
-        // Actualización de Ts en caliente (HU-03)
+        // Modificación de Ts en caliente (HU-03 / Subtarea #18)[cite: 1]
         vista.addListenerCambiarMuestreo(e -> {
             String textoEntrada = vista.getTiempoMuestreoTexto();
             actualizarPeriodo(textoEntrada);
         });
 
-        // Exportación de datos analógicos a disco (HU-04)
-        vista.addListenerGuardarAnalogica(e -> {
-            exportarDatosCanalAnalogico();
-        });
+        // Exportación de datos analógicos a disco (HU-04)[cite: 1]
+        vista.addListenerGuardarAnalogica(e -> exportarDatosCanalAnalogico());
 
-        // Exportación de datos digitales a disco (HU-06)
-        vista.addListenerGuardarDigital(e -> {
-            exportarDatosCanalDigital();
-        });
+        // Exportación de datos digitales a disco (HU-06)[cite: 1]
+        vista.addListenerGuardarDigital(e -> exportarDatosCanalDigital());
+
+        // Conexión de los 4 actuadores y sus indicadores LED (HU-07 / Subtareas #34 y #35)[cite: 1]
+        for (int i = 0; i < NUM_SALIDAS; i++) {
+            final int canal = i;
+            vista.addListenerSalida(canal, e -> {
+                boolean estadoActual = vista.getBotonSalida(canal).isSelected();
+                establecerEstadoSalida(canal, estadoActual);
+            });
+        }
     }
 
-    /**
-     * Sanitiza y valida la entrada con ValidadorMuestreo aplicando el nuevo
-     * retardo en caliente.
-     */
+    // =========================================================================
+    // SALIDAS DIGITALES Y ACTUADORES VIRTUALES (HU-07 / #34 Y #35)
+    // =========================================================================
+    public void establecerEstadoSalida(int canal, boolean nuevoEstado) {
+        if (canal >= 0 && canal < NUM_SALIDAS) {
+            this.estadosSalidas[canal] = nuevoEstado;
+
+            IndicadorLed led = vista.getLedSalida(canal);
+            if (led != null) {
+                led.setEstado(nuevoEstado);
+            }
+
+            System.out.printf(">> [Actuador] Salida D%d -> %s%n",
+                    (canal + 1), (nuevoEstado ? "1 (ON)" : "0 (OFF)"));
+        }
+    }
+
+    public boolean getEstadoSalida(int canal) {
+        if (canal >= 0 && canal < NUM_SALIDAS) {
+            return estadosSalidas[canal];
+        }
+        return false;
+    }
+
+    public boolean[] getTodosLosEstadosSalidas() {
+        return estadosSalidas.clone();
+    }
+
+    // =========================================================================
+    // SANITIZACIÓN Y CONFIGURACIÓN DEL PERIODO TS
+    // =========================================================================
     public boolean actualizarPeriodo(String entradaTexto) {
         try {
             int nuevoTs = ValidadorMuestreo.validarPeriodo(entradaTexto);
@@ -198,9 +223,6 @@ public class ControladorAdquisicion {
     // =========================================================================
     // PERSISTENCIA Y EXPORTACIÓN A DISCO (HU-04 Y HU-06)
     // =========================================================================
-    /**
-     * Abre un JFileChooser y persiste el búfer analógico en disco.
-     */
     private void exportarDatosCanalAnalogico() {
         List<double[]> datos = obtenerBufferAnalogicoActivo();
         if (datos.isEmpty()) {
@@ -233,9 +255,6 @@ public class ControladorAdquisicion {
         }
     }
 
-    /**
-     * Abre un JFileChooser y persiste el búfer digital en disco (#30 / HU-06).
-     */
     private void exportarDatosCanalDigital() {
         List<double[]> datos = obtenerBufferDigitalActivo();
         if (datos.isEmpty()) {
@@ -268,9 +287,6 @@ public class ControladorAdquisicion {
         }
     }
 
-    /**
-     * Diálogo centralizado para selección de archivo de destino.
-     */
     private File solicitarRutaGuardado(String titulo) {
         JFileChooser selector = new JFileChooser();
         selector.setDialogTitle(titulo);
@@ -290,33 +306,16 @@ public class ControladorAdquisicion {
     // =========================================================================
     // EXTRACTORES DE BÚFERES CRONOLÓGICOS (SUBTAREAS #21 Y #30)
     // =========================================================================
-    /**
-     * HU-04 (Subtarea #21): Retorna una copia defensiva del búfer analógico
-     * activo.
-     */
     public synchronized List<double[]> obtenerBufferAnalogicoActivo() {
         synchronized (bufferAnalogicoActivo) {
             return new ArrayList<>(bufferAnalogicoActivo);
         }
     }
 
-    /**
-     * HU-06 (Subtarea #30): Retorna una copia defensiva del búfer digital
-     * activo en pares (tiempo, estado). Cada registro es un double[] donde [0]
-     * = tiempo en segundos y [1] = nivel lógico (0.0 o 1.0).
-     */
     public synchronized List<double[]> obtenerBufferDigitalActivo() {
         synchronized (bufferDigitalActivo) {
             return new ArrayList<>(bufferDigitalActivo);
         }
-    }
-
-    public int getCantidadMuestrasAnalogicas() {
-        return bufferAnalogicoActivo.size();
-    }
-
-    public int getCantidadMuestrasDigitales() {
-        return bufferDigitalActivo.size();
     }
 
     public void limpiarBufferAnalogico() {
@@ -327,9 +326,6 @@ public class ControladorAdquisicion {
         bufferDigitalActivo.clear();
     }
 
-    // =========================================================================
-    // CONTROL DEL CICLO DE VIDA
-    // =========================================================================
     public void iniciarAdquisicion() {
         if (timerMuestreo != null && !timerMuestreo.isRunning()) {
             timerMuestreo.start();

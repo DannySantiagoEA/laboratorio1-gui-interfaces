@@ -10,6 +10,13 @@ import java.awt.Dimension;
 import java.awt.event.ActionListener;
 import javax.swing.DefaultComboBoxModel;
 import javax.swing.JLayeredPane;
+import java.awt.Color;
+import java.awt.FlowLayout;
+import java.awt.GridLayout;
+import javax.swing.BorderFactory;
+import javax.swing.JLabel;
+import javax.swing.JPanel;
+import javax.swing.JToggleButton;
 
 /**
  * Vista principal. Solo muestra datos y avisa de eventos. No contiene lógica de
@@ -20,6 +27,11 @@ import javax.swing.JLayeredPane;
  */
 public class VentanaPrincipal extends javax.swing.JFrame {
 
+    // ===================== ATRIBUTOS DE ACTUADORES (HU-07) =====================
+    private final IndicadorLed[] ledsSalidas = new IndicadorLed[4];
+    private final JToggleButton[] botonesSalidas = new JToggleButton[4];
+    private JPanel panelContenedorActuadores;
+
     public VentanaPrincipal() {
         initComponents();
         // Tamaño fijo: así el tamaño de la gráfica (700x260) no agranda la ventana
@@ -27,6 +39,9 @@ public class VentanaPrincipal extends javax.swing.JFrame {
         jLayeredPane6.setPreferredSize(new Dimension(323, 235));
         setTiempoMuestreoActual(100);
         Tiempo_muestreo_nuevo.setText("100");
+
+        inicializarModuloActuadores(); // <-- Pegar aquí
+
         pack();
     }
 
@@ -111,6 +126,56 @@ public class VentanaPrincipal extends javax.swing.JFrame {
         contenedor.add(grafica, BorderLayout.CENTER);
         contenedor.revalidate();
         contenedor.repaint();
+    }
+    // ===================== MÓDULO DE ACTUADORES Y LEDS (HU-07) =====================
+
+    private void inicializarModuloActuadores() {
+        panelContenedorActuadores = new JPanel(new GridLayout(1, 4, 15, 5));
+        panelContenedorActuadores.setBorder(BorderFactory.createTitledBorder(
+                BorderFactory.createEtchedBorder(), "Salidas Digitales / Actuadores Virtuales (HU-07)"));
+        panelContenedorActuadores.setBackground(Color.WHITE);
+
+        for (int i = 0; i < 4; i++) {
+            int canal = i + 1;
+            JPanel panelCanal = new JPanel(new FlowLayout(FlowLayout.CENTER, 8, 4));
+            panelCanal.setOpaque(false);
+
+            ledsSalidas[i] = new IndicadorLed("Salida D" + canal, false);
+            botonesSalidas[i] = new JToggleButton("Out " + canal);
+            botonesSalidas[i].setFocusPainted(false);
+            botonesSalidas[i].setPreferredSize(new Dimension(80, 28));
+
+            panelCanal.add(new JLabel("D" + canal + ":"));
+            panelCanal.add(ledsSalidas[i]);
+            panelCanal.add(botonesSalidas[i]);
+
+            panelContenedorActuadores.add(panelCanal);
+        }
+
+        getContentPane().removeAll();
+        getContentPane().setLayout(new BorderLayout());
+        getContentPane().add(jPanel1, BorderLayout.CENTER);
+        getContentPane().add(panelContenedorActuadores, BorderLayout.SOUTH);
+    }
+
+    public IndicadorLed getLedSalida(int canal) {
+        if (canal >= 0 && canal < 4) {
+            return ledsSalidas[canal];
+        }
+        return null;
+    }
+
+    public JToggleButton getBotonSalida(int canal) {
+        if (canal >= 0 && canal < 4) {
+            return botonesSalidas[canal];
+        }
+        return null;
+    }
+
+    public void addListenerSalida(int canal, ActionListener l) {
+        if (canal >= 0 && canal < 4 && botonesSalidas[canal] != null) {
+            botonesSalidas[canal].addActionListener(l);
+        }
     }
 
     /**
