@@ -28,6 +28,6 @@ public class TipoOnda {
 
     // Función de cada una de las 4 entradas digitales (en orden)
     public static final String[] DIGITALES = {
-        CUADRADA, PWM, PRBS, ESCALON
+        CUADRADA, SENO, TRIANGULAR, RAMPA_SUBIDA
     };
 }

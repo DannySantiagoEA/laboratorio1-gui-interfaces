@@ -14,16 +14,15 @@ import org.jfree.chart.ChartFactory;
 import org.jfree.chart.ChartPanel;
 import org.jfree.chart.JFreeChart;
 import org.jfree.chart.axis.NumberAxis;
-import org.jfree.chart.axis.NumberTickUnit;
 import org.jfree.chart.plot.PlotOrientation;
 import org.jfree.chart.plot.XYPlot;
 import org.jfree.chart.renderer.xy.XYLineAndShapeRenderer;
-import org.jfree.chart.renderer.xy.XYStepRenderer;
 import org.jfree.data.xy.XYSeries;
 import org.jfree.data.xy.XYSeriesCollection;
 import java.util.ArrayList;
 import java.util.List;
 import org.jfree.data.Range;
+import java.awt.geom.Ellipse2D;
 
         
 
@@ -83,19 +82,26 @@ public class GraficaTiempo extends JPanel {
         ejeX.setAutoRange(true);
         ejeX.setFixedAutoRange(VENTANA_SEGUNDOS);
 
-        // 5. Eje Y: rango fijo para que la gráfica no "salte"
+                // 5. Eje Y
         NumberAxis ejeVertical = (NumberAxis) plot.getRangeAxis();
-        ejeVertical.setRange(yMin, yMax);
         if (digital) {
-            ejeVertical.setTickUnit(new NumberTickUnit(1)); // solo marca 0 y 1
+            // Se ajusta solo a lo que se ve: 0..1 para la lógica, 0..5 V para las muestreadas
+            ejeVertical.setAutoRange(true);
+            ejeVertical.setAutoRangeIncludesZero(true);
+            ejeVertical.setAutoRangeMinimumSize(1.0);
+        } else {
+            ejeVertical.setRange(yMin, yMax);   // rango fijo para que la gráfica no "salte"
         }
 
-        // 6. Forma de la línea: escalones para digital, continua para analógica
-        XYLineAndShapeRenderer renderer = digital
-                ? new XYStepRenderer()
-                : new XYLineAndShapeRenderer(true, false);
+        // 6. Forma del trazo:
+        //    analógica -> línea continua
+        //    digital   -> solo puntos (tiempo discreto, una muestra cada Ts)
+        XYLineAndShapeRenderer renderer = new XYLineAndShapeRenderer(!digital, digital);
         renderer.setSeriesPaint(0, color);
         renderer.setSeriesStroke(0, new BasicStroke(2.0f));
+        if (digital) {
+            renderer.setSeriesShape(0, new Ellipse2D.Double(-3, -3, 6, 6));   // punto de 6 px
+        }
         plot.setRenderer(renderer);
 
         // 7. Meter el gráfico en un panel de Swing
