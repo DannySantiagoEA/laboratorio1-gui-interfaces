@@ -9,6 +9,7 @@ import com.laboratorio.model.Data;
 import com.laboratorio.view.VentanaPrincipal;
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
+import java.io.File;
 
 /**
  * Punto de entrada principal de la aplicación. Configura el aspecto visual

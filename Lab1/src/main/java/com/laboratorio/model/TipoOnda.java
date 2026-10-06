@@ -18,6 +18,8 @@ public class TipoOnda {
     public static final String RAMPA_BAJADA = "Rampa bajada";
     public static final String ESCALON = "Escalón";
     public static final String RUIDO = "Ruido";
+    public static final String PWM = "PWM";
+    public static final String PRBS = "PRBS";
 
     // Función de cada una de las 8 entradas analógicas (en orden)
     public static final String[] ANALOGICAS = {
@@ -26,6 +28,6 @@ public class TipoOnda {
 
     // Función de cada una de las 4 entradas digitales (en orden)
     public static final String[] DIGITALES = {
-        SENO, COSENO, TRIANGULAR, ESCALON
+        CUADRADA, SENO, TRIANGULAR, RAMPA_SUBIDA
     };
 }

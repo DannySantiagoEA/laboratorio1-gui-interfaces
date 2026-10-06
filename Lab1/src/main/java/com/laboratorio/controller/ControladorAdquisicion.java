@@ -6,6 +6,7 @@ package com.laboratorio.controller;
 
 import com.laboratorio.model.Data;
 import com.laboratorio.model.EscritorArchivo;
+import com.laboratorio.model.SalidasDigitales;
 import com.laboratorio.view.GraficaTiempo;
 import com.laboratorio.view.IndicadorLed;
 import com.laboratorio.view.VentanaPrincipal;
@@ -33,7 +34,7 @@ public class ControladorAdquisicion {
     private final VentanaPrincipal vista;
     private final Data modelo;
     private Timer timerMuestreo;
-    private int periodoMuestreoMs = 100; // Ts inicial estándar: 100 ms (10 Hz)
+    private int periodoMuestreoMs = 100; // Ts inicial: 100 ms (SOLO afecta a las digitales)
     private long contadorTicks = 0;
 
     // Componentes gráficos JFreeChart encapsulados en GraficaTiempo
@@ -48,9 +49,8 @@ public class ControladorAdquisicion {
     private final List<double[]> bufferAnalogicoActivo = Collections.synchronizedList(new ArrayList<>());
     private final List<double[]> bufferDigitalActivo = Collections.synchronizedList(new ArrayList<>());
 
-    // Módulo de actuadores virtuales y salidas digitales (HU-07 / #34 y #35)[cite: 1]
-    public static final int NUM_SALIDAS = 4;
-    private final boolean[] estadosSalidas = new boolean[NUM_SALIDAS];
+    // Módulo de actuadores virtuales: el estado vive en el modelo (Tarea #35)
+    public static final int NUM_SALIDAS = SalidasDigitales.NUM_SALIDAS;
 
     public ControladorAdquisicion(VentanaPrincipal vista, Data modelo) {
         this.vista = vista;
@@ -68,8 +68,8 @@ public class ControladorAdquisicion {
         // Señal analógica: trazo continuo, rango 0.0 V a 5.0 V, color rojo
         this.graficaAnalogica = new GraficaTiempo("Voltaje (V)", 0.0, 5.0, false, new Color(200, 30, 30));
 
-        // Señal digital: escalón discreto, rango -0.2 a 1.2, color azul
-        this.graficaDigital = new GraficaTiempo("Nivel Lógico", -0.2, 1.2, true, new Color(30, 110, 200));
+        // Señal digital: puntos en tiempo discreto (una muestra cada Ts), color azul
+        this.graficaDigital = new GraficaTiempo("Valor (0/1 lógico o V)", -0.2, 5.2, true, new Color(30, 110, 200));
     }
 
     private void inicializarVista() {
@@ -79,17 +79,37 @@ public class ControladorAdquisicion {
         vista.cargarNombresCanales(modelo.getNombresAnalogicas(), modelo.getNombresDigitales());
         vista.setTiempoMuestreoActual(this.periodoMuestreoMs);
 
-        // Inicializar estado de los indicadores LED de la vista
+        // Títulos iniciales de las gráficas
+        graficaAnalogica.cambiarTitulo(modelo.getNombresAnalogicas()[canalAnalogicoActivo]);
+        graficaDigital.cambiarTitulo(modelo.getNombresDigitales()[canalDigitalActivo]);
+
+        // Estado inicial de los LED según el modelo de salidas
+        SalidasDigitales salidas = modelo.getSalidas();
         for (int i = 0; i < NUM_SALIDAS; i++) {
             IndicadorLed led = vista.getLedSalida(i);
             if (led != null) {
-                led.setEstado(estadosSalidas[i]);
+                led.setEstado(salidas.getEstado(i));
             }
         }
+
+        // Disparador (Tarea #35): cada vez que una salida cambia en el modelo,
+        // se actualizan su LED y su botón en la vista
+        salidas.agregarDisparador((canal, estado, tiempo) -> {
+            IndicadorLed led = vista.getLedSalida(canal);
+            if (led != null) {
+                led.setEstado(estado);
+            }
+            if (vista.getBotonSalida(canal) != null) {
+                vista.getBotonSalida(canal).setSelected(estado);
+            }
+            System.out.printf(">> [Actuador] t = %.2f s | Salida D%d -> %s%n",
+                    tiempo, (canal + 1), (estado ? "1 (ON)" : "0 (OFF)"));
+        });
     }
 
     private void configurarTimer() {
-        timerMuestreo = new Timer(periodoMuestreoMs, new ActionListener() {
+        // El timer va a paso fijo (analógicas continuas); Ts solo se aplica a las digitales
+        timerMuestreo = new Timer(Data.PERIODO_ANALOGICO_MS, new ActionListener() {
             @Override
             public void actionPerformed(ActionEvent e) {
                 ejecutarCicloMuestreo();
@@ -99,22 +119,21 @@ public class ControladorAdquisicion {
 
     private void ejecutarCicloMuestreo() {
         contadorTicks++;
+        double tiempoActual = modelo.getTiempo();   // instante de ESTA muestra (antes de que avance)
         modelo.tomarMuestra();
 
-        double[] analogicas = modelo.getTodasLasAnalogicas();
-        int[] digitales = modelo.getTodasLasDigitales();
-        double tiempoActual = modelo.getTiempo();
-
-        double vAnalogico = analogicas[canalAnalogicoActivo];
-        int vDigital = digitales[canalDigitalActivo];
-
-        // 1. Trazado continuo en pantalla
+        // 1. Analógica: un punto en cada ciclo (trazo continuo)
+        double vAnalogico = modelo.getTodasLasAnalogicas()[canalAnalogicoActivo];
         graficaAnalogica.agregarPunto(tiempoActual, vAnalogico);
-        graficaDigital.agregarPunto(tiempoActual, vDigital);
-
-        // 2. Registro de pares (ti, Vi) y (ti, Si) en los búferes cronológicos
         bufferAnalogicoActivo.add(new double[]{tiempoActual, vAnalogico});
-        bufferDigitalActivo.add(new double[]{tiempoActual, (double) vDigital});
+
+        // 2. Digital: solo las muestras tomadas en los instantes n·Ts (puntos)
+        for (double[] fila : modelo.extraerMuestrasDigitalesNuevas()) {
+            double tn = fila[0];
+            double vDigital = fila[1 + canalDigitalActivo];
+            graficaDigital.agregarPunto(tn, vDigital);
+            bufferDigitalActivo.add(new double[]{tn, vDigital});
+        }
     }
 
     private void conectarEventos() {
@@ -123,7 +142,8 @@ public class ControladorAdquisicion {
             int nuevoCanal = vista.getCanalAnalogico();
             if (nuevoCanal >= 0 && nuevoCanal < Data.NUM_ANALOGICAS && nuevoCanal != canalAnalogicoActivo) {
                 this.canalAnalogicoActivo = nuevoCanal;
-                this.graficaAnalogica.limpiar();
+                // La gráfica NO se borra: la señal anterior queda y la nueva sigue desde ahí
+                this.graficaAnalogica.cambiarTitulo(modelo.getNombresAnalogicas()[nuevoCanal]);
                 limpiarBufferAnalogico();
                 System.out.println(">> Canal analógico conmutado a: " + modelo.getNombresAnalogicas()[nuevoCanal]);
             }
@@ -134,7 +154,8 @@ public class ControladorAdquisicion {
             int nuevoCanal = vista.getCanalDigital();
             if (nuevoCanal >= 0 && nuevoCanal < Data.NUM_DIGITALES && nuevoCanal != canalDigitalActivo) {
                 this.canalDigitalActivo = nuevoCanal;
-                this.graficaDigital.limpiar();
+                // La gráfica NO se borra: la señal anterior queda y la nueva sigue desde ahí
+                this.graficaDigital.cambiarTitulo(modelo.getNombresDigitales()[nuevoCanal]);
                 limpiarBufferDigital();
                 System.out.println(">> [Controlador] Canal digital activo: " + modelo.getNombresDigitales()[nuevoCanal]);
             }
@@ -165,29 +186,25 @@ public class ControladorAdquisicion {
     // =========================================================================
     // SALIDAS DIGITALES Y ACTUADORES VIRTUALES (HU-07 / #34 Y #35)
     // =========================================================================
+    /**
+     * Cambia una salida en el MODELO. El disparador registrado en
+     * inicializarVista() se encarga de actualizar el LED.
+     */
     public void establecerEstadoSalida(int canal, boolean nuevoEstado) {
         if (canal >= 0 && canal < NUM_SALIDAS) {
-            this.estadosSalidas[canal] = nuevoEstado;
-
-            IndicadorLed led = vista.getLedSalida(canal);
-            if (led != null) {
-                led.setEstado(nuevoEstado);
-            }
-
-            System.out.printf(">> [Actuador] Salida D%d -> %s%n",
-                    (canal + 1), (nuevoEstado ? "1 (ON)" : "0 (OFF)"));
+            modelo.getSalidas().setEstado(canal, nuevoEstado, modelo.getTiempo());
         }
     }
 
     public boolean getEstadoSalida(int canal) {
         if (canal >= 0 && canal < NUM_SALIDAS) {
-            return estadosSalidas[canal];
+            return modelo.getSalidas().getEstado(canal);
         }
         return false;
     }
 
     public boolean[] getTodosLosEstadosSalidas() {
-        return estadosSalidas.clone();
+        return modelo.getSalidas().getEstados();
     }
 
     // =========================================================================
@@ -198,9 +215,7 @@ public class ControladorAdquisicion {
             int nuevoTs = ValidadorMuestreo.validarPeriodo(entradaTexto);
             this.periodoMuestreoMs = nuevoTs;
 
-            if (timerMuestreo != null) {
-                timerMuestreo.setDelay(nuevoTs);
-            }
+            // Ts solo cambia el muestreo de las digitales (el timer sigue a paso fijo)
             if (modelo != null) {
                 modelo.setPeriodoMuestreoMs(nuevoTs);
             }
@@ -224,7 +239,8 @@ public class ControladorAdquisicion {
     // PERSISTENCIA Y EXPORTACIÓN A DISCO (HU-04 Y HU-06)
     // =========================================================================
     private void exportarDatosCanalAnalogico() {
-        List<double[]> datos = obtenerBufferAnalogicoActivo();
+        // Se guarda lo que se ve en la gráfica (puede incluir cambios de señal)
+        List<double[]> datos = graficaAnalogica.getPuntosVisibles();
         if (datos.isEmpty()) {
             JOptionPane.showMessageDialog(vista,
                     "No hay muestras analógicas en memoria para exportar.",
@@ -239,7 +255,7 @@ public class ControladorAdquisicion {
                 int total = EscritorArchivo.guardarValorVsTiempo(
                         datos,
                         archivo,
-                        modelo.getNombresAnalogicas()[canalAnalogicoActivo],
+                        graficaAnalogica.getDescripcionVisible(),
                         "V"
                 );
                 JOptionPane.showMessageDialog(vista,
@@ -256,7 +272,8 @@ public class ControladorAdquisicion {
     }
 
     private void exportarDatosCanalDigital() {
-        List<double[]> datos = obtenerBufferDigitalActivo();
+        // Se guarda lo que se ve en la gráfica (puede incluir cambios de señal)
+        List<double[]> datos = graficaDigital.getPuntosVisibles();
         if (datos.isEmpty()) {
             JOptionPane.showMessageDialog(vista,
                     "No hay muestras digitales en memoria para exportar.",
@@ -271,8 +288,8 @@ public class ControladorAdquisicion {
                 int total = EscritorArchivo.guardarValorVsTiempo(
                         datos,
                         archivo,
-                        modelo.getNombresDigitales()[canalDigitalActivo],
-                        "Estado"
+                        graficaDigital.getDescripcionVisible(),
+                        "0/1 o V"
                 );
                 JOptionPane.showMessageDialog(vista,
                         "Archivo digital guardado con " + total + " muestras:\n" + archivo.getAbsolutePath(),
