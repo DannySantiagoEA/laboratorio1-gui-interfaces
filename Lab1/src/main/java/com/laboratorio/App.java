@@ -4,10 +4,18 @@
  */
 package com.laboratorio;
 
+import com.laboratorio.controller.ControladorAdquisicion;
+import com.laboratorio.model.Data;
 import com.laboratorio.view.VentanaPrincipal;
 import javax.swing.SwingUtilities;
 import javax.swing.UIManager;
+import java.io.File;
 
+/**
+ * Punto de entrada principal de la aplicación. Configura el aspecto visual
+ * nativo del sistema operativo e inicializa el flujo MVC dentro del Event
+ * Dispatch Thread (EDT)[cite: 1, 14].
+ */
 public class App {
 
     public static void main(String[] args) {
@@ -17,10 +25,16 @@ public class App {
         }
 
         SwingUtilities.invokeLater(() -> {
-            VentanaPrincipal ventana = new VentanaPrincipal();
-            ventana.setTitle("Laboratorio Virtual - GUI Interfaces");
-            ventana.setLocationRelativeTo(null);
-            ventana.setVisible(true);
+            VentanaPrincipal vista = new VentanaPrincipal();
+            Data modelo = new Data();
+            ControladorAdquisicion controlador = new ControladorAdquisicion(vista, modelo);
+
+            vista.setTitle("Laboratorio 1 - Adquisición de Señales e Instrumentación (Interfaces)");
+            vista.setLocationRelativeTo(null); // Centrar en la pantalla
+            vista.setVisible(true);
+
+            // Iniciar flujo de adquisición periódica
+            controlador.iniciarAdquisicion();
         });
     }
 }
